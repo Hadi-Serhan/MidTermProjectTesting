@@ -1,10 +1,10 @@
+import os
 import requests
 import uuid
 
-VAULTWARDEN_URL = "http://localhost:3000"
-CLIENT_ID = "user.eefb6ad6-05e4-4c1a-b3a9-06bf642ca497"
-CLIENT_SECRET = "SQoIWxFcuojXfiXnVmpSnot9uebYvn"
-ORG_ID = "MidTermProject"
+VAULTWARDEN_URL = os.getenv("VAULTWARDEN_URL", "http://localhost:3000")
+CLIENT_ID = os.getenv("CLIENT_ID") #"user.eefb6ad6-05e4-4c1a-b3a9-06bf642ca497"
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")#"SQoIWxFcuojXfiXnVmpSnot9uebYvn"
 
 def get_access_token():
     data = {

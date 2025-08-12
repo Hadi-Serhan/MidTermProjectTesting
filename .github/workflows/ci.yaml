@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    services:
+      vaultwarden:
+        image: vaultwarden/server:latest
+        ports:
+          - 3000:80
+        env:
+          SIGNUPS_ALLOWED: "true"    
+          WEBSOCKET_ENABLED: "true"
+        options: >-
+          --health-cmd "curl -fsS http://localhost:80/alive || exit 1"
+          --health-interval=5s
+          --health-retries=20
+          --health-timeout=2s
+          --health-start-period=5s
+
+    env:
+      # Base URL your tests use
+      VAULTWARDEN_URL: "http://localhost:3000"
+
+      # Optional secrets (set them in repo/settings -> Secrets and variables -> Actions)
+      # If present, we’ll run auth-required tests too.
+      CLIENT_ID: ${{ secrets.VW_CLIENT_ID }}           # e.g. user.xxxxx OR organization.xxxxx
+      CLIENT_SECRET: ${{ secrets.VW_CLIENT_SECRET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system deps (curl, Xvfb for UI tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl xvfb
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Wait for Vaultwarden to be up
+        run: |
+          for i in {1..60}; do
+            if curl -fsS "${VAULTWARDEN_URL}/alive" >/dev/null; then
+              echo "Vaultwarden is up"
+              exit 0
+            fi
+            echo "Waiting for Vaultwarden..."
+            sleep 2
+          done
+          echo "Vaultwarden did not become ready in time" >&2
+          exit 1
+
+      - name: Run health + version tests (always)
+        run: |
+          pytest -q tests/api -k "health or version" --maxfail=1
+
+      - name: Run API tests that need client credentials (only if secrets exist)
+        if: ${{ env.CLIENT_ID != '' && env.CLIENT_SECRET != '' }}
+        run: |
+          pytest -q tests/api -k "not health and not version" --maxfail=1
+
+      - name: Run UI tests headlessly with xvfb (only if you want UI)
+        if: ${{ always() }}
+        run: |
+          xvfb-run -a pytest -q tests/ui --maxfail=1
