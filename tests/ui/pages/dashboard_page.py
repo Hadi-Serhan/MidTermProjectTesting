@@ -1,6 +1,8 @@
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
-from ui.pages.item_page import ItemPage
+from .item_page import ItemPage
 from .base_page import BasePage
 
 class DashboardPage(BasePage):

@@ -1,6 +1,6 @@
 from selenium.webdriver.common.by import By
 
-from ui.pages.dashboard_page import DashboardPage
+from .dashboard_page import DashboardPage
 from .base_page import BasePage
 
 class LoginPage(BasePage):
