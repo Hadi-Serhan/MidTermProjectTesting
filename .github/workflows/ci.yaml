@@ -14,7 +14,7 @@ jobs:
         ports:
           - 3000:80
         env:
-          SIGNUPS_ALLOWED: "true"    
+          SIGNUPS_ALLOWED: "true"
           WEBSOCKET_ENABLED: "true"
         options: >-
           --health-cmd "curl -fsS http://localhost:80/alive || exit 1"
@@ -24,13 +24,10 @@ jobs:
           --health-start-period=5s
 
     env:
-      # Base URL your tests use
       VAULTWARDEN_URL: "http://localhost:3000"
-
-      # Optional secrets (set them in repo/settings -> Secrets and variables -> Actions)
-      # If present, we’ll run auth-required tests too.
-      CLIENT_ID: ${{ secrets.VW_CLIENT_ID }}           # e.g. user.xxxxx OR organization.xxxxx
+      CLIENT_ID: ${{ secrets.VW_CLIENT_ID }}
       CLIENT_SECRET: ${{ secrets.VW_CLIENT_SECRET }}
+      VW_BASE_URL: ${{ secrets.VW_BASE_URL }}
 
     steps:
       - name: Checkout
@@ -41,10 +38,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install system deps (curl, Xvfb for UI tests)
+      - name: Install system deps
         run: |
           sudo apt-get update
           sudo apt-get install -y curl xvfb
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
 
       - name: Install Python deps
         run: |
@@ -55,25 +57,51 @@ jobs:
         run: |
           for i in {1..60}; do
             if curl -fsS "${VAULTWARDEN_URL}/alive" >/dev/null; then
-              echo "Vaultwarden is up"
               exit 0
             fi
-            echo "Waiting for Vaultwarden..."
             sleep 2
           done
-          echo "Vaultwarden did not become ready in time" >&2
           exit 1
 
-      - name: Run health + version tests (always)
+      - name: Run health + version tests
         run: |
-          pytest -q tests/api -k "health or version" --maxfail=1
+          python -m pytest -q tests/api -k "health or version" --maxfail=1
 
-      - name: Run API tests that need client credentials (only if secrets exist)
-        if: ${{ env.CLIENT_ID != '' && env.CLIENT_SECRET != '' }}
+      - name: Run API auth tests against external instance
+        if: ${{ env.CLIENT_ID != '' && env.CLIENT_SECRET != '' && env.VW_BASE_URL != '' }}
+        env:
+          VAULTWARDEN_URL: ${{ env.VW_BASE_URL }}
         run: |
-          pytest -q tests/api -k "not health and not version" --maxfail=1
+          python -m pytest -q tests/api -k "not health and not version" --maxfail=1
 
-      - name: Run UI tests headlessly with xvfb (only if you want UI)
-        if: ${{ always() }}
+      - name: Run UI tests headlessly
         run: |
-          xvfb-run -a pytest -q tests/ui --maxfail=1
+          xvfb-run -a python -m pytest -q tests/ui --maxfail=1
+
+  deploy:
+    needs: tests
+    if: ${{ github.ref == 'refs/heads/main' && secrets.EC2_HOST != '' && secrets.EC2_USER != '' && secrets.EC2_KEY != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            set -e
+            REPO="${GITHUB_REPOSITORY}"
+            BRANCH="main"
+            REMOTE_DIR="${EC2_DIR:-~/app}"
+            mkdir -p "$REMOTE_DIR"
+            if [ ! -d "$REMOTE_DIR/.git" ]; then
+              git clone -b "$BRANCH" "https://github.com/${REPO}.git" "$REMOTE_DIR"
+            fi
+            cd "$REMOTE_DIR"
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+            git pull --ff-only origin "$BRANCH"
+            if command -v docker >/dev/null 2>&1 && [ -f docker-compose.yml ]; then
+              docker compose pull || true
+              docker compose up -d --build
+            fi
