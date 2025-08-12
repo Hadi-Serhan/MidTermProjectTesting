@@ -1,5 +1,6 @@
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import ElementClickInterceptedException
 from .base_page import BasePage
 
 class ItemPage(BasePage):
@@ -9,75 +10,91 @@ class ItemPage(BasePage):
         )
         field.send_keys(name)
         return self
-    
+
     def enter_item_username(self, username):
         field = self.wait.until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'input[formcontrolname="username"]'))
         )
         field.send_keys(username)
         return self
-        
+
     def enter_item_password(self, password):
         field = self.wait.until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'input[formcontrolname="password"]'))
         )
         field.send_keys(password)
         return self
-        
+
     def enter_website(self, website):
         field = self.wait.until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'input[formcontrolname="uri"]'))
         )
         field.send_keys(website)
         return self
-        
+
     def save_item(self):
         save_button = self.wait.until(
             EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[type="submit"]'))
         )
-        save_button.click()
+        try:
+            save_button.click()
+        except ElementClickInterceptedException:
+            self._wait_for_no_overlay(5)
+            self.driver.execute_script("arguments[0].click();", save_button)
         return self
-    
+
     def close_popup(self):
-        # Click the close button
-        self.wait.until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, "button[aria-label='Close']"))
-        ).click()
-        return self 
+        # Reliably close the “View Login” dialog and clear overlays
+        self._dismiss_dialogs(timeout=10)
+        return self
 
     def open_item_options_for(self, item_name):
-        # Wait until the table body and at least one row exist
+        # Make sure no overlay/dialog is still present
+        self._wait_for_no_overlay(10)
+
+        # Wait for table + first row
         self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table tbody")))
         self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table tbody tr[bitrow]")))
 
-        # Find the row that contains the name button with the exact visible text
+        # Locate the row for this item name
         row_xpath = (
             "//table//tbody//tr[@bitrow]"
             "[.//button[@bitlink and contains(@title,'Edit item') "
             f"and normalize-space()='{item_name}']]"
         )
         row = self.wait.until(EC.visibility_of_element_located((By.XPATH, row_xpath)))
+        try:
+            self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", row)
+        except Exception:
+            pass
 
-        # Scroll into view to avoid intercepted click
-        self.driver.execute_script("arguments[0].scrollIntoView({block:'center'})", row)
-
-        # Click that row's Options button (independent of column order)
+        # Options (⋮) button
         try:
             btn = row.find_element(By.XPATH, ".//button[@aria-label='Options']")
         except Exception:
             btn = row.find_element(
                 By.XPATH,
-                ".//button[contains(translate(@aria-label,"
-                "'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'options')]"
+                ".//button[contains(translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'options')]"
             )
-        btn.click()
+
+        try:
+            btn.click()
+        except ElementClickInterceptedException:
+            self._wait_for_no_overlay(10)
+            self.driver.execute_script("arguments[0].click();", btn)
         return self
 
     def click_delete(self):
-        items = self.driver.find_elements(By.CSS_SELECTOR, 'button[role="menuitem"]')
+        items = self.wait.until(
+            EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'button[role="menuitem"]'))
+        )
         for b in items:
-            if "delete" in b.text.lower():
-                b.click()
+            if "delete" in (b.text or "").lower():
+                try:
+                    b.click()
+                except ElementClickInterceptedException:
+                    self._wait_for_no_overlay(5)
+                    self.driver.execute_script("arguments[0].click();", b)
                 return self
         raise AssertionError("Delete menu item not found")
 
