@@ -3,26 +3,32 @@ import requests
 import uuid
 
 VAULTWARDEN_URL = os.getenv("VAULTWARDEN_URL", "http://localhost:3000")
-CLIENT_ID = os.getenv("CLIENT_ID") #"user.eefb6ad6-05e4-4c1a-b3a9-06bf642ca497"
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")#"SQoIWxFcuojXfiXnVmpSnot9uebYvn"
+CLIENT_ID = os.getenv("CLIENT_ID") 
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 
 
 def get_access_token():
+    if not CLIENT_ID or not CLIENT_SECRET:
+        raise RuntimeError("Set CLIENT_ID and CLIENT_SECRET for API key auth.")
     data = {
         "grant_type": "client_credentials",
         "scope": "api",
         "client_id": CLIENT_ID,
         "client_secret": CLIENT_SECRET,
-        "deviceIdentifier": str(uuid.uuid4()),  # Required device identifier
-        "deviceType": "1",  # CLI client type
-        "deviceName": "Python API Client"
+        "deviceIdentifier": str(uuid.uuid4()),
+        "deviceType": "7",
+        "deviceName": "pytest",
     }
+    r = requests.post(
+        f"{VAULTWARDEN_URL}/identity/connect/token",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        data=data,
+        timeout=10,
+    )
+    if r.status_code >= 400:
+        raise RuntimeError(f"Token error {r.status_code}: {r.text}")
+    return r.json()["access_token"]
 
-    response = requests.post(f"{VAULTWARDEN_URL}/identity/connect/token", headers={
-        "Content-Type": "application/x-www-form-urlencoded"
-    }, data=data)
-    response.raise_for_status()
-    return response.json()["access_token"]
 
 
 def make_api_request(endpoint):
@@ -37,7 +43,7 @@ def make_api_request(endpoint):
 
 # Health Checks
 def test_health_alive():
-    r = requests.get("http://localhost:3000/alive")
+    r = requests.get(f"{VAULTWARDEN_URL}/alive", timeout=5)
     assert r.status_code == 200
 # API Alive Check
 def test_health_api_alive():
