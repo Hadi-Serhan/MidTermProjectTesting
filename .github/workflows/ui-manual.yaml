@@ -9,33 +9,40 @@ on:
         type: choice
         default: 'aws'
         options:
-          - aws         # uses your tunneled/external instance
-          - local       # spins a local Vaultwarden container (needs a precreated user!)
+          - aws
+          - local
       headless:
         description: 'Run browser headless'
         required: true
         type: choice
         default: 'true'
-        options: ['true', 'false']
+        options:
+          - 'true'
+          - 'false'
       base_url:
         description: 'Override VAULTWARDEN_URL (optional)'
         required: false
 
+permissions:
+  contents: read
+
 jobs:
-  ui:
+  # -------------------------
+  # Local run (starts service)
+  # -------------------------
+  ui-local:
+    if: ${{ github.event.inputs.environment == 'local' }}
     runs-on: ubuntu-latest
 
-    # Only start a local Vaultwarden container if environment == local
     services:
       vaultwarden:
-        if: ${{ inputs.environment == 'local' }}
         image: vaultwarden/server:latest
         ports:
           - 3000:80
         env:
           SIGNUPS_ALLOWED: "true"
           WEBSOCKET_ENABLED: "true"
-          I_REALLY_WANT_VOLATILE_STORAGE: "true"  # ephemeral for CI
+          I_REALLY_WANT_VOLATILE_STORAGE: "true"
         options: >-
           --health-cmd "curl -fsS http://localhost:80/alive || exit 1"
           --health-interval=5s
@@ -43,25 +50,11 @@ jobs:
           --health-timeout=3s
           --health-start-period=5s
 
-    env:
-      # Resolve target URL:
-      # - If user provided base_url input, use it
-      # - Else if 'aws', use secret VW_BASE_URL
-      # - Else (local) use local container URL
-      VAULTWARDEN_URL: ${{ inputs.base_url != '' && inputs.base_url || (inputs.environment == 'aws' && secrets.VW_BASE_URL || 'http://localhost:3000') }}
-
-      # UI creds from repo/environment secrets (must exist for 'aws').
-      VW_EMAIL:    ${{ secrets.VW_EMAIL }}
-      VW_PASSWORD: ${{ secrets.VW_PASSWORD }}
-
-      # Your tests read HEADLESS ("true"/"false") and run Chrome accordingly
-      HEADLESS: ${{ inputs.headless }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -81,9 +74,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # Only wait for service when running locally
+      # Resolve target URL: base_url input if provided, else local service
+      - name: Resolve VAULTWARDEN_URL
+        run: |
+          if [ -n "${{ github.event.inputs.base_url }}" ]; then
+            echo "VAULTWARDEN_URL=${{ github.event.inputs.base_url }}" >> $GITHUB_ENV
+          else
+            echo "VAULTWARDEN_URL=http://localhost:3000" >> $GITHUB_ENV
+          fi
+          echo "HEADLESS=${{ github.event.inputs.headless }}" >> $GITHUB_ENV
+
       - name: Wait for local Vaultwarden
-        if: ${{ inputs.environment == 'local' }}
         run: |
           for i in {1..90}; do
             if curl -fsS "${VAULTWARDEN_URL}/alive" >/dev/null; then
@@ -96,8 +97,6 @@ jobs:
           docker ps -a || true
           exit 1
 
-      # IMPORTANT: for 'local', this assumes the test user already exists.
-      # (You can sign up manually once while SIGNUPS_ALLOWED=true.)
       - name: Run UI tests (xvfb)
         run: |
           mkdir -p reports
@@ -107,8 +106,75 @@ jobs:
             --junitxml=reports/ui-junit.xml
 
       - name: Upload UI report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-reports
+          name: ui-reports-local
+          path: reports/*
+          retention-days: 14
+
+  # -------------------------
+  # AWS run (no service)
+  # -------------------------
+  ui-aws:
+    if: ${{ github.event.inputs.environment == 'aws' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl xvfb
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Resolve URL: base_url input > secret VW_BASE_URL
+      - name: Resolve VAULTWARDEN_URL
+        run: |
+          if [ -n "${{ github.event.inputs.base_url }}" ]; then
+            echo "VAULTWARDEN_URL=${{ github.event.inputs.base_url }}" >> $GITHUB_ENV
+          elif [ -n "${{ secrets.VW_BASE_URL }}" ]; then
+            echo "VAULTWARDEN_URL=${{ secrets.VW_BASE_URL }}" >> $GITHUB_ENV
+          else
+            echo "VW_BASE_URL secret not set and no base_url input provided." >&2
+            exit 1
+          fi
+          echo "HEADLESS=${{ github.event.inputs.headless }}" >> $GITHUB_ENV
+          echo "VW_EMAIL=${{ secrets.VW_EMAIL }}" >> $GITHUB_ENV
+          echo "VW_PASSWORD=${{ secrets.VW_PASSWORD }}" >> $GITHUB_ENV
+
+      - name: Sanity check AWS endpoint
+        run: |
+          curl -fsSI "${VAULTWARDEN_URL}/alive" || (echo "Endpoint not reachable" >&2; exit 1)
+
+      - name: Run UI tests (xvfb)
+        run: |
+          mkdir -p reports
+          xvfb-run -a python -m pytest -q tests/ui \
+            --maxfail=1 \
+            --html=reports/ui.html --self-contained-html \
+            --junitxml=reports/ui-junit.xml
+
+      - name: Upload UI report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-reports-aws
           path: reports/*
           retention-days: 14
