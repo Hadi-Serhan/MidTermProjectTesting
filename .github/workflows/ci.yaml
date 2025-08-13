@@ -75,12 +75,19 @@ jobs:
         run: |
           mkdir -p reports
           python -m pytest tests/api \
-            -k "health or version" \
             --maxfail=1 \
             --junitxml=reports/junit-local.xml \
             --html=reports/report-local.html --self-contained-html \
             -q
-
+      - name: Run UI tests (local) with reports
+        run: |
+          mkdir -p reports
+          xvfb-run -a python -m pytest tests/ui \
+            --maxfail=1 \
+            --junitxml=reports/junit-ui-local.xml \
+            --html=reports/report-ui-local.html --self-contained-html \
+            -q
+            
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
