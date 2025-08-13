@@ -132,7 +132,7 @@ class BasePage:
             assert expected_text.lower() in actual_text.lower(), \
                 f"Expected toast '{expected_text}', got '{actual_text}'"
             # let any backdrops fade before the next action
-            self._wait_for_no_overlay(10)
+            self._wait_for_no_overlay(6)
             return self
         except TimeoutException:
             raise AssertionError(f"Toast with text '{expected_text}' not found within {timeout} seconds.")

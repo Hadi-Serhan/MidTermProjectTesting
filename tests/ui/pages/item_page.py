@@ -44,13 +44,13 @@ class ItemPage(BasePage):
         return self
 
     def close_popup(self):
-        # Reliably close the “View Login” dialog and clear overlays
+        # Clear overlays
         self._dismiss_dialogs(timeout=10)
         return self
 
     def open_item_options_for(self, item_name):
         # Make sure no overlay/dialog is still present
-        self._wait_for_no_overlay(10)
+        self._wait_for_no_overlay(6)
 
         # Wait for table + first row
         self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table tbody")))
@@ -68,7 +68,7 @@ class ItemPage(BasePage):
         except Exception:
             pass
 
-        # Options (⋮) button
+        # Options button
         try:
             btn = row.find_element(By.XPATH, ".//button[@aria-label='Options']")
         except Exception:
