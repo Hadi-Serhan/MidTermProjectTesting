@@ -12,24 +12,19 @@ jobs:
       vaultwarden:
         image: vaultwarden/server:latest
         ports:
-          - 3000:80           # host 3000 -> container 80
+          - 3000:80            # host 3000 -> container 80
         env:
           SIGNUPS_ALLOWED: "true"
           WEBSOCKET_ENABLED: "true"
-        # NOTE: removed the container healthcheck that used curl
+          I_REALLY_WANT_VOLATILE_STORAGE: "true"   # <-- allow ephemeral storage in CI
 
     env:
-      # Local service container URL for smoke tests
       VAULTWARDEN_URL: "http://localhost:3000"
-
-      # Optional external instance (AWS) secrets
       VW_BASE_URL:   ${{ secrets.VW_BASE_URL }}
       CLIENT_ID:     ${{ secrets.VW_CLIENT_ID }}
       CLIENT_SECRET: ${{ secrets.VW_CLIENT_SECRET }}
-
-      # Optional UI creds if you want to run UI against AWS
-      VW_EMAIL:    ${{ secrets.VW_EMAIL }}
-      VW_PASSWORD: ${{ secrets.VW_PASSWORD }}
+      VW_EMAIL:      ${{ secrets.VW_EMAIL }}
+      VW_PASSWORD:   ${{ secrets.VW_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -66,17 +61,14 @@ jobs:
           done
           echo "Vaultwarden did not become healthy in time" >&2
           docker ps -a || true
-          # Try to show logs for the container bound to port 3000
           ID=$(docker ps -aqf "publish=3000")
           if [ -n "$ID" ]; then docker logs "$ID" || true; fi
           exit 1
 
-      # ---- SMOKE TESTS against local service container ----
       - name: Run health + version tests (local)
         run: |
           python -m pytest -q tests/api -k "health or version" --maxfail=1
 
-      # ---- AUTHENTICATED API TESTS against AWS (optional) ----
       - name: Run authenticated API tests (AWS)
         if: ${{ env.CLIENT_ID != '' && env.CLIENT_SECRET != '' && env.VW_BASE_URL != '' }}
         env:
@@ -84,8 +76,6 @@ jobs:
         run: |
           python -m pytest -q tests/api -k "not health and not version" --maxfail=1
 
-      # ---- UI TESTS (optional) ----
-      # Option A: Run UI against AWS (needs publicly reachable VW_BASE_URL and VW_EMAIL/PASSWORD secrets)
       - name: Run UI tests headlessly (AWS)
         if: ${{ env.VW_BASE_URL != '' && env.VW_EMAIL != '' && env.VW_PASSWORD != '' }}
         env:
@@ -93,7 +83,6 @@ jobs:
         run: |
           xvfb-run -a python -m pytest -q tests/ui --maxfail=1
 
-      # Optional: dump logs if something fails later
       - name: Dump Vaultwarden logs on failure
         if: failure()
         run: |
