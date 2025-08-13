@@ -12,11 +12,11 @@ jobs:
       vaultwarden:
         image: vaultwarden/server:latest
         ports:
-          - 3000:80            # host 3000 -> container 80
+          - 3000:80        
         env:
           SIGNUPS_ALLOWED: "true"
           WEBSOCKET_ENABLED: "true"
-          I_REALLY_WANT_VOLATILE_STORAGE: "true"   # <-- allow ephemeral storage in CI
+          I_REALLY_WANT_VOLATILE_STORAGE: "true" 
 
     env:
       VAULTWARDEN_URL: "http://localhost:3000"
