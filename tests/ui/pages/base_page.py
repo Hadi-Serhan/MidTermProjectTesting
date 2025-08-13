@@ -88,7 +88,7 @@ class BasePage:
     def click_element(self, by, value):
         """Robust click with overlay wait + JS fallback."""
         el = self.wait.until(EC.presence_of_element_located((by, value)))
-        self._wait_for_no_overlay(5)
+        self._wait_for_no_overlay(10)
         self.wait.until(EC.element_to_be_clickable((by, value)))
         try:
             self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", el)
@@ -97,7 +97,7 @@ class BasePage:
         try:
             el.click()
         except (ElementClickInterceptedException, StaleElementReferenceException):
-            self._wait_for_no_overlay(5)
+            self._wait_for_no_overlay(10)
             el = self.driver.find_element(by, value)
             self.driver.execute_script("arguments[0].click();", el)
         return self
@@ -132,7 +132,7 @@ class BasePage:
             assert expected_text.lower() in actual_text.lower(), \
                 f"Expected toast '{expected_text}', got '{actual_text}'"
             # let any backdrops fade before the next action
-            self._wait_for_no_overlay(6)
+            self._wait_for_no_overlay(10)
             return self
         except TimeoutException:
             raise AssertionError(f"Toast with text '{expected_text}' not found within {timeout} seconds.")

@@ -39,7 +39,7 @@ class ItemPage(BasePage):
         try:
             save_button.click()
         except ElementClickInterceptedException:
-            self._wait_for_no_overlay(5)
+            self._wait_for_no_overlay(10)
             self.driver.execute_script("arguments[0].click();", save_button)
         return self
 
@@ -50,7 +50,7 @@ class ItemPage(BasePage):
 
     def open_item_options_for(self, item_name):
         # Make sure no overlay/dialog is still present
-        self._wait_for_no_overlay(6)
+        self._wait_for_no_overlay(10)
 
         # Wait for table + first row
         self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table tbody")))
@@ -93,7 +93,7 @@ class ItemPage(BasePage):
                 try:
                     b.click()
                 except ElementClickInterceptedException:
-                    self._wait_for_no_overlay(5)
+                    self._wait_for_no_overlay(10)
                     self.driver.execute_script("arguments[0].click();", b)
                 return self
         raise AssertionError("Delete menu item not found")

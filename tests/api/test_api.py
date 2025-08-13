@@ -1,7 +1,9 @@
 import os
 import requests
 import uuid
+from dotenv import load_dotenv, find_dotenv
 
+load_dotenv(find_dotenv(), override=False)
 VAULTWARDEN_URL = os.getenv("VAULTWARDEN_URL", "http://localhost:3000")
 CLIENT_ID = os.getenv("CLIENT_ID") 
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
