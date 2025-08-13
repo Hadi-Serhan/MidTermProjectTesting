@@ -1,3 +1,4 @@
+# .github/workflows/ui-manual.yaml
 name: UI Tests (manual)
 
 on:
@@ -8,147 +9,92 @@ on:
         required: true
         type: choice
         default: 'aws'
-        options:
-          - aws
-          - local
-      headless:
-        description: 'Run browser headless'
-        required: true
-        type: choice
-        default: 'true'
-        options: ['true', 'false']
+        options: [aws, local]
       base_url:
         description: 'Override VAULTWARDEN_URL (optional)'
         required: false
-
-permissions:
-  contents: read
+      headless:
+        description: 'Run headless'
+        required: true
+        type: choice
+        default: 'true'
+        options: ['true','false']
 
 jobs:
-  ui-local:
-    if: ${{ github.event.inputs.environment == 'local' }}
+  ui-aws:
+    if: ${{ inputs.environment == 'aws' }}
     runs-on: ubuntu-latest
+    env:
+      VAULTWARDEN_URL: ${{ inputs.base_url != '' && inputs.base_url || secrets.VW_BASE_URL }}
+      VW_EMAIL:        ${{ secrets.VW_EMAIL }}
+      VW_PASSWORD:     ${{ secrets.VW_PASSWORD }}
+      HEADLESS:        ${{ inputs.headless }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+      - uses: browser-actions/setup-chrome@v1
+        with: { chrome-version: stable }
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest-html
+      - name: Run UI tests
+        run: |
+          mkdir -p reports
+          xvfb-run -a python -m pytest -q tests/ui \
+            --maxfail=1 \
+            --html=reports/ui.html --self-contained-html \
+            --junitxml=reports/ui-junit.xml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ui-reports
+          path: reports/*
 
+  ui-local:
+    if: ${{ inputs.environment == 'local' }}
+    runs-on: ubuntu-latest
     services:
       vaultwarden:
         image: vaultwarden/server:latest
-        ports:
-          - 3000:80
+        ports: [ "3000:80" ]
         env:
           SIGNUPS_ALLOWED: "true"
           WEBSOCKET_ENABLED: "true"
           I_REALLY_WANT_VOLATILE_STORAGE: "true"
-        options: >-
-          --health-cmd "curl -fsS http://localhost:80/alive || exit 1"
-          --health-interval=5s
-          --health-retries=30
-          --health-timeout=3s
-          --health-start-period=5s
-
     env:
-      VAULTWARDEN_URL: ${{ github.event.inputs.base_url != '' && github.event.inputs.base_url || 'http://localhost:3000' }}
-      HEADLESS:        ${{ github.event.inputs.headless }}
-      VW_EMAIL:        ${{ secrets.VW_EMAIL }}
-      VW_PASSWORD:     ${{ secrets.VW_PASSWORD }}
-
+      VAULTWARDEN_URL: ${{ inputs.base_url != '' && inputs.base_url || 'http://localhost:3000' }}
+      # You must set these *inputs* or *secrets* to a test user that
+      # your test will create via the UI (see notes below), otherwise login will fail.
+      VW_EMAIL:    ${{ secrets.VW_EMAIL }}
+      VW_PASSWORD: ${{ secrets.VW_PASSWORD }}
+      HEADLESS:    ${{ inputs.headless }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install system deps
-        run: |
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: |
           sudo apt-get update
-          sudo apt-get install -y curl xvfb
-
-      - name: Install Chrome
-        uses: browser-actions/setup-chrome@v1
-        with:
-          chrome-version: stable
-
-      - name: Install Python deps
-        run: |
+          sudo apt-get install -y xvfb
+      - uses: browser-actions/setup-chrome@v1
+        with: { chrome-version: stable }
+      - run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest-html pytest-metadata
-
-      - name: Wait for local Vaultwarden
+          pip install -r requirements.txt pytest-html
+      - name: Wait for Vaultwarden
         run: |
-          for i in {1..90}; do
-            if curl -fsS "${VAULTWARDEN_URL}/alive" >/dev/null; then
-              echo "Vaultwarden is up."
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Vaultwarden did not become healthy in time" >&2
-          docker ps -a || true
-          exit 1
-
-      # Assumes the test user already exists in this container. Create once if needed.
-      - name: Run UI tests (xvfb)
+          for i in {1..90}; do curl -fsS "${VAULTWARDEN_URL}/alive" && exit 0; sleep 2; done
+          echo "Vaultwarden not up" >&2; exit 1
+      - name: Run UI tests
         run: |
           mkdir -p reports
           xvfb-run -a python -m pytest -q tests/ui \
             --maxfail=1 \
             --html=reports/ui.html --self-contained-html \
             --junitxml=reports/ui-junit.xml
-
-      - name: Upload UI report
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: ui-reports-local
+          name: ui-reports
           path: reports/*
-          retention-days: 14
-
-  ui-aws:
-    if: ${{ github.event.inputs.environment == 'aws' }}
-    runs-on: ubuntu-latest
-
-    env:
-      VAULTWARDEN_URL: ${{ github.event.inputs.base_url != '' && github.event.inputs.base_url || secrets.VW_BASE_URL }}
-      HEADLESS:        ${{ github.event.inputs.headless }}
-      VW_EMAIL:        ${{ secrets.VW_EMAIL }}
-      VW_PASSWORD:     ${{ secrets.VW_PASSWORD }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y curl xvfb
-
-      - name: Install Chrome
-        uses: browser-actions/setup-chrome@v1
-        with:
-          chrome-version: stable
-
-      - name: Install Python deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest-html pytest-metadata
-
-      - name: Run UI tests (xvfb)
-        run: |
-          mkdir -p reports
-          xvfb-run -a python -m pytest -q tests/ui \
-            --maxfail=1 \
-            --html=reports/ui.html --self-contained-html \
-            --junitxml=reports/ui-junit.xml
-
-      - name: Upload UI report
-        uses: actions/upload-artifact@v4
-        with:
-          name: ui-reports-aws
-          path: reports/*
-          retention-days: 14
