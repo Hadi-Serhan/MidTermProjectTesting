@@ -46,7 +46,7 @@ jobs:
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest-html
+          pip install -r requirements.txt pytest-html pytest-metadata
 
       - name: Wait for Vaultwarden (local service)
         run: |
@@ -63,19 +63,19 @@ jobs:
           if [ -n "$ID" ]; then docker logs "$ID" || true; fi
           exit 1
 
-      - name: Run API smoke (health + version) with reports
+      - name: Run API health+version with reports
         run: |
           mkdir -p reports
-          python -m pytest tests/api -k "health or version" -q \
-            --maxfail=1 \
-            --junitxml=reports/junit-smoke.xml \
-            --html=reports/report-smoke.html --self-contained-html
+          python -m pytest tests/api -k "health or version" --maxfail=1 \
+            --junitxml=reports/junit-api.xml \
+            --html=reports/report-api.html --self-contained-html \
+            -q
 
-      - name: Upload test reports
+      - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-reports
+          name: api-reports
           path: reports/*
 
       - name: Dump Vaultwarden logs on failure

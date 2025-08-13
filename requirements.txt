@@ -3,3 +3,5 @@ requests
 selenium
 webdriver-manager
 argon2-cffi
+pytest-html
+pytest-metadata

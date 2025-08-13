@@ -16,9 +16,7 @@ on:
         required: true
         type: choice
         default: 'true'
-        options:
-          - 'true'
-          - 'false'
+        options: ['true', 'false']
       base_url:
         description: 'Override VAULTWARDEN_URL (optional)'
         required: false
@@ -27,9 +25,6 @@ permissions:
   contents: read
 
 jobs:
-  # -------------------------
-  # Local run (starts service)
-  # -------------------------
   ui-local:
     if: ${{ github.event.inputs.environment == 'local' }}
     runs-on: ubuntu-latest
@@ -50,11 +45,17 @@ jobs:
           --health-timeout=3s
           --health-start-period=5s
 
+    env:
+      VAULTWARDEN_URL: ${{ github.event.inputs.base_url != '' && github.event.inputs.base_url || 'http://localhost:3000' }}
+      HEADLESS:        ${{ github.event.inputs.headless }}
+      VW_EMAIL:        ${{ secrets.VW_EMAIL }}
+      VW_PASSWORD:     ${{ secrets.VW_PASSWORD }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -72,17 +73,7 @@ jobs:
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      # Resolve target URL: base_url input if provided, else local service
-      - name: Resolve VAULTWARDEN_URL
-        run: |
-          if [ -n "${{ github.event.inputs.base_url }}" ]; then
-            echo "VAULTWARDEN_URL=${{ github.event.inputs.base_url }}" >> $GITHUB_ENV
-          else
-            echo "VAULTWARDEN_URL=http://localhost:3000" >> $GITHUB_ENV
-          fi
-          echo "HEADLESS=${{ github.event.inputs.headless }}" >> $GITHUB_ENV
+          pip install -r requirements.txt pytest-html pytest-metadata
 
       - name: Wait for local Vaultwarden
         run: |
@@ -97,6 +88,7 @@ jobs:
           docker ps -a || true
           exit 1
 
+      # Assumes the test user already exists in this container. Create once if needed.
       - name: Run UI tests (xvfb)
         run: |
           mkdir -p reports
@@ -106,25 +98,27 @@ jobs:
             --junitxml=reports/ui-junit.xml
 
       - name: Upload UI report
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ui-reports-local
           path: reports/*
           retention-days: 14
 
-  # -------------------------
-  # AWS run (no service)
-  # -------------------------
   ui-aws:
     if: ${{ github.event.inputs.environment == 'aws' }}
     runs-on: ubuntu-latest
+
+    env:
+      VAULTWARDEN_URL: ${{ github.event.inputs.base_url != '' && github.event.inputs.base_url || secrets.VW_BASE_URL }}
+      HEADLESS:        ${{ github.event.inputs.headless }}
+      VW_EMAIL:        ${{ secrets.VW_EMAIL }}
+      VW_PASSWORD:     ${{ secrets.VW_PASSWORD }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -142,26 +136,7 @@ jobs:
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      # Resolve URL: base_url input > secret VW_BASE_URL
-      - name: Resolve VAULTWARDEN_URL
-        run: |
-          if [ -n "${{ github.event.inputs.base_url }}" ]; then
-            echo "VAULTWARDEN_URL=${{ github.event.inputs.base_url }}" >> $GITHUB_ENV
-          elif [ -n "${{ secrets.VW_BASE_URL }}" ]; then
-            echo "VAULTWARDEN_URL=${{ secrets.VW_BASE_URL }}" >> $GITHUB_ENV
-          else
-            echo "VW_BASE_URL secret not set and no base_url input provided." >&2
-            exit 1
-          fi
-          echo "HEADLESS=${{ github.event.inputs.headless }}" >> $GITHUB_ENV
-          echo "VW_EMAIL=${{ secrets.VW_EMAIL }}" >> $GITHUB_ENV
-          echo "VW_PASSWORD=${{ secrets.VW_PASSWORD }}" >> $GITHUB_ENV
-
-      - name: Sanity check AWS endpoint
-        run: |
-          curl -fsSI "${VAULTWARDEN_URL}/alive" || (echo "Endpoint not reachable" >&2; exit 1)
+          pip install -r requirements.txt pytest-html pytest-metadata
 
       - name: Run UI tests (xvfb)
         run: |
@@ -172,7 +147,6 @@ jobs:
             --junitxml=reports/ui-junit.xml
 
       - name: Upload UI report
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ui-reports-aws
