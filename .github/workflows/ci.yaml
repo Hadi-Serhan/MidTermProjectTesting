@@ -6,8 +6,6 @@ on:
 
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
 
 jobs:
   tests:
@@ -25,12 +23,6 @@ jobs:
 
     env:
       VAULTWARDEN_URL: "http://localhost:3000"
-      # kept for convenience (unused now that AWS steps are removed)
-      VW_BASE_URL:   ${{ secrets.VW_BASE_URL }}
-      CLIENT_ID:     ${{ secrets.VW_CLIENT_ID }}
-      CLIENT_SECRET: ${{ secrets.VW_CLIENT_SECRET }}
-      VW_EMAIL:      ${{ secrets.VW_EMAIL }}
-      VW_PASSWORD:   ${{ secrets.VW_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -71,35 +63,20 @@ jobs:
           if [ -n "$ID" ]; then docker logs "$ID" || true; fi
           exit 1
 
-      - name: Run health + version tests (local) with reports
+      - name: Run API smoke (health + version) with reports
         run: |
           mkdir -p reports
-          python -m pytest tests/api \
+          python -m pytest tests/api -k "health or version" -q \
             --maxfail=1 \
-            --junitxml=reports/junit-local.xml \
-            --html=reports/report-local.html --self-contained-html \
-            -q
-      - name: Run UI tests (local) with reports
-        run: |
-          mkdir -p reports
-          xvfb-run -a python -m pytest tests/ui \
-            --maxfail=1 \
-            --junitxml=reports/junit-ui-local.xml \
-            --html=reports/report-ui-local.html --self-contained-html \
-            -q
-            
+            --junitxml=reports/junit-smoke.xml \
+            --html=reports/report-smoke.html --self-contained-html
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-reports
           path: reports/*
-
-      - name: Publish JUnit results to PR
-        if: always()
-        uses: EnricoMi/publish-unit-test-result-action@v2
-        with:
-          files: "reports/*.xml"
 
       - name: Dump Vaultwarden logs on failure
         if: failure()

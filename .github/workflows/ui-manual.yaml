@@ -1,0 +1,114 @@
+name: UI Tests (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Where to run UI tests'
+        required: true
+        type: choice
+        default: 'aws'
+        options:
+          - aws         # uses your tunneled/external instance
+          - local       # spins a local Vaultwarden container (needs a precreated user!)
+      headless:
+        description: 'Run browser headless'
+        required: true
+        type: choice
+        default: 'true'
+        options: ['true', 'false']
+      base_url:
+        description: 'Override VAULTWARDEN_URL (optional)'
+        required: false
+
+jobs:
+  ui:
+    runs-on: ubuntu-latest
+
+    # Only start a local Vaultwarden container if environment == local
+    services:
+      vaultwarden:
+        if: ${{ inputs.environment == 'local' }}
+        image: vaultwarden/server:latest
+        ports:
+          - 3000:80
+        env:
+          SIGNUPS_ALLOWED: "true"
+          WEBSOCKET_ENABLED: "true"
+          I_REALLY_WANT_VOLATILE_STORAGE: "true"  # ephemeral for CI
+        options: >-
+          --health-cmd "curl -fsS http://localhost:80/alive || exit 1"
+          --health-interval=5s
+          --health-retries=30
+          --health-timeout=3s
+          --health-start-period=5s
+
+    env:
+      # Resolve target URL:
+      # - If user provided base_url input, use it
+      # - Else if 'aws', use secret VW_BASE_URL
+      # - Else (local) use local container URL
+      VAULTWARDEN_URL: ${{ inputs.base_url != '' && inputs.base_url || (inputs.environment == 'aws' && secrets.VW_BASE_URL || 'http://localhost:3000') }}
+
+      # UI creds from repo/environment secrets (must exist for 'aws').
+      VW_EMAIL:    ${{ secrets.VW_EMAIL }}
+      VW_PASSWORD: ${{ secrets.VW_PASSWORD }}
+
+      # Your tests read HEADLESS ("true"/"false") and run Chrome accordingly
+      HEADLESS: ${{ inputs.headless }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl xvfb
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Only wait for service when running locally
+      - name: Wait for local Vaultwarden
+        if: ${{ inputs.environment == 'local' }}
+        run: |
+          for i in {1..90}; do
+            if curl -fsS "${VAULTWARDEN_URL}/alive" >/dev/null; then
+              echo "Vaultwarden is up."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Vaultwarden did not become healthy in time" >&2
+          docker ps -a || true
+          exit 1
+
+      # IMPORTANT: for 'local', this assumes the test user already exists.
+      # (You can sign up manually once while SIGNUPS_ALLOWED=true.)
+      - name: Run UI tests (xvfb)
+        run: |
+          mkdir -p reports
+          xvfb-run -a python -m pytest -q tests/ui \
+            --maxfail=1 \
+            --html=reports/ui.html --self-contained-html \
+            --junitxml=reports/ui-junit.xml
+
+      - name: Upload UI report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-reports
+          path: reports/*
+          retention-days: 14
