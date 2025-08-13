@@ -2,11 +2,42 @@ import os
 import requests
 import uuid
 from dotenv import load_dotenv, find_dotenv
+from urllib.parse import urlparse
 
 load_dotenv(find_dotenv(), override=False)
-VAULTWARDEN_URL = os.getenv("VAULTWARDEN_URL", "http://localhost:3000")
-CLIENT_ID = os.getenv("CLIENT_ID") 
-CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+def resolve_env():
+    # 1) If standard vars are set, use them 
+    url = os.getenv("VAULTWARDEN_URL")
+    cid = os.getenv("CLIENT_ID")
+    csec = os.getenv("CLIENT_SECRET")
+    if url and cid and csec:
+        return url, cid, csec
+
+    # 2) Else branch by profile or by URL
+    profile = os.getenv("VW_PROFILE", "").lower()
+    if profile == "aws":
+        return (os.getenv("AWS_VAULTWARDEN_URL"),
+                os.getenv("AWS_CLIENT_ID"),
+                os.getenv("AWS_CLIENT_SECRET"))
+    if profile == "local":
+        return (os.getenv("LOCAL_VAULTWARDEN_URL"),
+                os.getenv("LOCAL_CLIENT_ID"),
+                os.getenv("LOCAL_CLIENT_SECRET"))
+
+    # 3) Fallback: infer from URL host if provided
+    if url:
+        host = urlparse(url).hostname or ""
+        if host in ("localhost", "127.0.0.1"):
+            # decide which set based on port if you want
+            port = (urlparse(url).port or 80)
+            if port == 3000:
+                return (url, os.getenv("LOCAL_CLIENT_ID"), os.getenv("LOCAL_CLIENT_SECRET"))
+            else:
+                return (url, os.getenv("AWS_CLIENT_ID"), os.getenv("AWS_CLIENT_SECRET"))
+
+    raise RuntimeError("No credentials found. Set CLIENT_ID/CLIENT_SECRET or VW_PROFILE and corresponding vars.")
+
+VAULTWARDEN_URL, CLIENT_ID, CLIENT_SECRET = resolve_env()
 
 
 def get_access_token():
