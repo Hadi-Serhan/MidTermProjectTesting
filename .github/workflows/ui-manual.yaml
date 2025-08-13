@@ -5,42 +5,75 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Where to run UI tests'
+        description: "Where to run UI tests"
         required: true
         type: choice
-        default: 'aws'
+        default: aws
         options: [aws, local]
       base_url:
-        description: 'Override VAULTWARDEN_URL (optional)'
+        description: "Override VAULTWARDEN_URL (optional)"
         required: false
       headless:
-        description: 'Run headless'
+        description: "Run headless"
         required: true
         type: choice
-        default: 'true'
-        options: ['true','false']
+        default: "true"
+        options: ["true","false"]
 
 jobs:
   ui-aws:
     if: ${{ inputs.environment == 'aws' }}
     runs-on: ubuntu-latest
     env:
+      # Prefer manual input; otherwise use secret VW_BASE_URL (e.g., http://<EC2-IP>:8000)
       VAULTWARDEN_URL: ${{ inputs.base_url != '' && inputs.base_url || secrets.VW_BASE_URL }}
       VW_EMAIL:        ${{ secrets.VW_EMAIL }}
       VW_PASSWORD:     ${{ secrets.VW_PASSWORD }}
       HEADLESS:        ${{ inputs.headless }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
-      - run: |
+        with:
+          python-version: "3.12"
+
+      - name: Install system deps
+        run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb
+          sudo apt-get install -y curl xvfb
+
       - uses: browser-actions/setup-chrome@v1
-        with: { chrome-version: stable }
-      - run: |
+        with:
+          chrome-version: stable
+
+      - name: Install Python deps
+        run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest-html
+
+      - name: Sanity check env
+        run: |
+          if [ -z "${VAULTWARDEN_URL}" ]; then
+            echo "VAULTWARDEN_URL is empty. Provide base_url input or set VW_BASE_URL secret." >&2
+            exit 1
+          fi
+          if [ -z "${VW_EMAIL}" ] || [ -z "${VW_PASSWORD}" ]; then
+            echo "VW_EMAIL/VW_PASSWORD secrets are missing." >&2
+            exit 1
+          fi
+
+      - name: Wait for target /alive
+        run: |
+          for i in {1..90}; do
+            if curl -fsS "${VAULTWARDEN_URL}/alive" >/dev/null; then
+              echo "Target is up: ${VAULTWARDEN_URL}"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Target did not become healthy in time: ${VAULTWARDEN_URL}" >&2
+          exit 1
+
       - name: Run UI tests
         run: |
           mkdir -p reports
@@ -48,45 +81,77 @@ jobs:
             --maxfail=1 \
             --html=reports/ui.html --self-contained-html \
             --junitxml=reports/ui-junit.xml
+
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: ui-reports
+          name: ui-reports-aws
           path: reports/*
 
   ui-local:
     if: ${{ inputs.environment == 'local' }}
     runs-on: ubuntu-latest
+
     services:
       vaultwarden:
         image: vaultwarden/server:latest
-        ports: [ "3000:80" ]
+        ports:
+          - "3000:80"
         env:
           SIGNUPS_ALLOWED: "true"
           WEBSOCKET_ENABLED: "true"
           I_REALLY_WANT_VOLATILE_STORAGE: "true"
+        options: >-
+          --health-cmd "curl -fsS http://localhost:80/alive || exit 1"
+          --health-interval=5s
+          --health-retries=30
+          --health-timeout=3s
+          --health-start-period=5s
+
     env:
+      # Default to the local service container unless manually overridden
       VAULTWARDEN_URL: ${{ inputs.base_url != '' && inputs.base_url || 'http://localhost:3000' }}
-      # You must set these *inputs* or *secrets* to a test user that
-      # your test will create via the UI (see notes below), otherwise login will fail.
-      VW_EMAIL:    ${{ secrets.VW_EMAIL }}
-      VW_PASSWORD: ${{ secrets.VW_PASSWORD }}
-      HEADLESS:    ${{ inputs.headless }}
+      VW_EMAIL:        ${{ secrets.VW_EMAIL }}
+      VW_PASSWORD:     ${{ secrets.VW_PASSWORD }}
+      HEADLESS:        ${{ inputs.headless }}
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
-        with: { python-version: '3.12' }
-      - run: |
+        with:
+          python-version: "3.12"
+
+      - name: Install system deps
+        run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb
+          sudo apt-get install -y curl xvfb
+
       - uses: browser-actions/setup-chrome@v1
-        with: { chrome-version: stable }
-      - run: |
+        with:
+          chrome-version: stable
+
+      - name: Install Python deps
+        run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest-html
-      - name: Wait for Vaultwarden
+
+      - name: Wait for Vaultwarden (local)
         run: |
-          for i in {1..90}; do curl -fsS "${VAULTWARDEN_URL}/alive" && exit 0; sleep 2; done
-          echo "Vaultwarden not up" >&2; exit 1
+          for i in {1..90}; do
+            if curl -fsS "${VAULTWARDEN_URL}/alive" >/dev/null; then
+              echo "Local Vaultwarden is up."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Local Vaultwarden did not become healthy in time" >&2
+          docker ps -a || true
+          exit 1
+
+      # NOTE: this container is fresh and volatile; ensure VW_EMAIL/VW_PASSWORD exist,
+      # and either pre-create the user once or add a signup bootstrap step here.
+
       - name: Run UI tests
         run: |
           mkdir -p reports
@@ -94,7 +159,9 @@ jobs:
             --maxfail=1 \
             --html=reports/ui.html --self-contained-html \
             --junitxml=reports/ui-junit.xml
+
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: ui-reports
+          name: ui-reports-local
           path: reports/*
