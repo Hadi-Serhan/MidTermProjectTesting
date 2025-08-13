@@ -12,28 +12,23 @@ jobs:
       vaultwarden:
         image: vaultwarden/server:latest
         ports:
-          - 3000:80
+          - 3000:80           # host 3000 -> container 80
         env:
-          SIGNUPS_ALLOWED: "true"   # allows creating a user if you later automate it
+          SIGNUPS_ALLOWED: "true"
           WEBSOCKET_ENABLED: "true"
-        options: >-
-          --health-cmd "curl -fsS http://localhost:80/alive || exit 1"
-          --health-interval=5s
-          --health-retries=20
-          --health-timeout=2s
-          --health-start-period=5s
+        # NOTE: removed the container healthcheck that used curl
 
     env:
       # Local service container URL for smoke tests
       VAULTWARDEN_URL: "http://localhost:3000"
 
       # Optional external instance (AWS) secrets
-      VW_BASE_URL: ${{ secrets.VW_BASE_URL }}
-      CLIENT_ID:   ${{ secrets.VW_CLIENT_ID }}
+      VW_BASE_URL:   ${{ secrets.VW_BASE_URL }}
+      CLIENT_ID:     ${{ secrets.VW_CLIENT_ID }}
       CLIENT_SECRET: ${{ secrets.VW_CLIENT_SECRET }}
 
       # Optional UI creds if you want to run UI against AWS
-      VW_EMAIL: ${{ secrets.VW_EMAIL }}
+      VW_EMAIL:    ${{ secrets.VW_EMAIL }}
       VW_PASSWORD: ${{ secrets.VW_PASSWORD }}
 
     steps:
@@ -62,11 +57,18 @@ jobs:
 
       - name: Wait for Vaultwarden (local service)
         run: |
-          for i in {1..60}; do
-            curl -fsS "${VAULTWARDEN_URL}/alive" >/dev/null && exit 0
+          for i in {1..120}; do
+            if curl -fsS "${VAULTWARDEN_URL}/alive" >/dev/null; then
+              echo "Vaultwarden is up."
+              exit 0
+            fi
             sleep 2
           done
           echo "Vaultwarden did not become healthy in time" >&2
+          docker ps -a || true
+          # Try to show logs for the container bound to port 3000
+          ID=$(docker ps -aqf "publish=3000")
+          if [ -n "$ID" ]; then docker logs "$ID" || true; fi
           exit 1
 
       # ---- SMOKE TESTS against local service container ----
@@ -90,3 +92,11 @@ jobs:
           VAULTWARDEN_URL: ${{ env.VW_BASE_URL }}
         run: |
           xvfb-run -a python -m pytest -q tests/ui --maxfail=1
+
+      # Optional: dump logs if something fails later
+      - name: Dump Vaultwarden logs on failure
+        if: failure()
+        run: |
+          docker ps -a || true
+          ID=$(docker ps -aqf "publish=3000")
+          if [ -n "$ID" ]; then docker logs "$ID" || true; fi
