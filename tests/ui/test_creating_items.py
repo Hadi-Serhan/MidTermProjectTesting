@@ -25,22 +25,16 @@
 # tests/ui/test_creating_items.py
 import os
 from tests.ui.pages.login_page import LoginPage
-from tests.ui.base_ui import BaseVaultwardenTest  # whatever your base class is named
+from tests.ui.base_ui import BaseVaultwardenTest  
 
-VW_URL = os.getenv("VAULTWARDEN_URL", "http://localhost:3000")
-VW_EMAIL = os.getenv("VW_EMAIL")
-VW_PASSWORD = os.getenv("VW_PASSWORD")
+EMAIL = os.getenv("VW_EMAIL", "hadixserhan@gmail.com")
+PASSWORD = os.getenv("VW_PASSWORD", "Hadi123456789123")
 
 class CreatingItemsTest(BaseVaultwardenTest):
-    def setUp(self):
-        super().setUp(base_url=VW_URL)  # your BaseUITest should accept base_url
-
     def test_create_new_item(self):
-        assert VW_EMAIL and VW_PASSWORD, "VW_EMAIL/VW_PASSWORD must be set for UI tests"
-
         (LoginPage(self.driver)
-            .enter_email(VW_EMAIL).click_continue()
-            .enter_password(VW_PASSWORD).click_login()
+            .enter_email(EMAIL).click_continue()
+            .enter_password(PASSWORD).click_login()
             .click_new_button().select_menu_item("Login")
             .enter_item_name("Test Login Item")
             .enter_item_username("testuser")
