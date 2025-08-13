@@ -1,6 +1,7 @@
 {
     "version": "0.2.0",
     "configurations": [
+
         {
             "name": "Python: Pytest",
             "type": "python",
@@ -9,7 +10,7 @@
             "args": [
                 "-s", // Show stdout
                 "-v", // Verbose
-                "ui" // Path to your tests folder or file
+                "tests/ui" // Path to your tests folder or file
             ],
             "console": "integratedTerminal",
             "justMyCode": false
