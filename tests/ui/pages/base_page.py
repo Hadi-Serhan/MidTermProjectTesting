@@ -10,7 +10,7 @@ from selenium.common.exceptions import (
 class BasePage:
     def __init__(self, driver):
         self.driver = driver
-        self.wait = WebDriverWait(driver, 300)
+        self.wait = WebDriverWait(driver, 30)
 
     # ----- internals: helpers for overlays/dialogs -----
     def _wait_for_no_overlay(self, timeout=10):
