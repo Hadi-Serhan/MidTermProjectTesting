@@ -64,19 +64,20 @@ jobs:
 
       - name: Wait for target /alive
         run: |
-          URL="${VAULTWARDEN_URL%/}/alive"
+          URL="${VAULTWARDEN_URL%/}/alive?ngrok-skip-browser-warning=true"
           for i in {1..120}; do
-            if curl -fIsS -L \
-                 -H "ngrok-skip-browser-warning: true" \
-                 -A "vw-ci-bot/1.0" \
-                 "$URL" >/dev/null; then
+            CODE=$(curl -sS -o /dev/null -w "%{http_code}" -L \
+                    -H "ngrok-skip-browser-warning: true" \
+                    -A "vw-ci-bot/1.0" \
+                    "$URL")
+            if [ "$CODE" -eq 200 ]; then
               echo "Target is up: ${VAULTWARDEN_URL}"
               exit 0
             fi
             sleep 2
           done
           echo "Target did not become healthy in time: ${VAULTWARDEN_URL}" >&2
-          # Debug: show what we got back
+          # Debug: show real response
           curl -i -L -H "ngrok-skip-browser-warning: true" -A "vw-ci-bot/1.0" "$URL" || true
           exit 1
 
