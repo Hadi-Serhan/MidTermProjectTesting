@@ -1,11 +1,15 @@
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import TimeoutException
 
 from .dashboard_page import DashboardPage
 from .base_page import BasePage
 
 class LoginPage(BasePage):
     def enter_email(self, email):
-        return self.enter_text(By.ID, "bit-input-0", email)
+        try:
+            return self.enter_text(By.ID, "bit-input-0", email)
+        except TimeoutException:
+            return self.enter_text(By.CSS_SELECTOR, 'input[type="email"]', email)
         
 
     def click_continue(self):
