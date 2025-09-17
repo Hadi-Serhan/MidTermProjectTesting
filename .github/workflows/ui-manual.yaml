@@ -4,13 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       base_url:
-        description: "VAULTWARDEN_URL (e.g., https://<sub>.ngrok-free.app)"
         required: true
       ui_email:
-        description: "UI email (optional if secret set)"
+        description: "UI email 
         required: false
       ui_password:
-        description: "UI password (optional if secret set)"
+        description: "UI password 
         required: false
       headless:
         description: "Run headless"
@@ -20,9 +19,9 @@ on:
         options: ["true","false"]
 
 permissions:
-  contents: read          # checkout
-  pages: write            # deploy to GitHub Pages
-  id-token: write         # required by actions/deploy-pages
+  contents: write   # needed to push gh-pages
+  pages: write      # needed to publish to GitHub Pages
+  id-token: write   # harmless default; not strictly required
 
 jobs:
   ui-aws:
@@ -97,14 +96,15 @@ jobs:
             --html=reports/ui.html --self-contained-html \
             --junitxml=reports/ui-junit.xml
 
-      - name: Upload raw test artifacts
+      - name: Upload raw reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ui-raw-artifacts
+          name: ui-reports
           path: |
             reports/*
             allure-results/*
+
 
       # Build Allure report using CLI (no gh-pages branch)
       - name: Set up Java (for Allure CLI)
@@ -125,6 +125,7 @@ jobs:
           allure generate allure-results --clean -o allure-report
           test -f allure-report/index.html
 
+          
       # Publish Allure HTML to GitHub Pages (from this workflow run)
       - name: Setup Pages
         if: always()
