@@ -20,15 +20,15 @@ on:
 
 permissions:
   contents: read
-  pages: write         # publish to GitHub Pages
-  id-token: write      # required by actions/deploy-pages
+  pages: write
+  id-token: write
 
 concurrency:
-  group: "pages"
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  ui-aws:
+  ui-tests:
     runs-on: ubuntu-latest
     env:
       VAULTWARDEN_URL: ${{ inputs.base_url }}
@@ -101,7 +101,7 @@ jobs:
             --html=reports/ui.html --self-contained-html \
             --junitxml=reports/ui-junit.xml
 
-      - name: Upload raw reports
+      - name: Upload raw reports (artifact)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -110,7 +110,7 @@ jobs:
             reports/*
             allure-results/*
 
-      # Build Allure report (static site)
+      # Build Allure static site
       - name: Set up Java (for Allure CLI)
         if: always()
         uses: actions/setup-java@v4
@@ -127,32 +127,33 @@ jobs:
         run: |
           allure generate allure-results --clean -o allure-report
           test -f allure-report/index.html
-          # prevent Jekyll from ignoring assets
-          touch allure-report/.nojekyll
+          touch allure-report/.nojekyll   # ensure assets are served
 
-      # Publish Allure HTML to GitHub Pages (artifact -> Pages)
-      - name: Setup Pages
-        if: always()
-        uses: actions/configure-pages@v5
-
-      - name: Upload Allure report artifact
+      - name: Upload Pages artifact (Allure HTML)
         if: always()
         uses: actions/upload-pages-artifact@v3
         with:
           path: allure-report
 
+  deploy-pages:
+    # deploy even if tests failed, so you can inspect the report
+    if: always()
+    needs: ui-tests
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
       - name: Deploy to GitHub Pages
-        if: always()
         id: deployment
         uses: actions/deploy-pages@v4
         with:
-          enablement: true               # auto-enable Pages for Actions source
-        environment:
-          name: github-pages
-          url: ${{ steps.deployment.outputs.page_url }}
+          enablement: true   # auto-enable "GitHub Actions" as the Pages source
 
       - name: Allure URL
-        if: always()
         env:
           ALLURE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
