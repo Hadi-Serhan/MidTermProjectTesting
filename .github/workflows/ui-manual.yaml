@@ -3,20 +3,14 @@ name: UI Tests (manual)
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        description: "Where to run UI tests"
-        required: true
-        type: choice
-        default: aws
-        options: [aws, local]
       base_url:
-        description: "Override VAULTWARDEN_URL (optional)"
-        required: false
+        description: "VAULTWARDEN_URL (e.g., https://<sub>.ngrok-free.app)"
+        required: true
       ui_email:
-        description: "UI email (optional if secrets are set)"
+        description: "UI email (optional if secret set)"
         required: false
       ui_password:
-        description: "UI password (optional if secrets are set)"
+        description: "UI password (optional if secret set)"
         required: false
       headless:
         description: "Run headless"
@@ -25,18 +19,21 @@ on:
         default: "true"
         options: ["true","false"]
 
+permissions:
+  contents: write   # needed to push gh-pages
+  id-token: write   # harmless default; not strictly required
+
 jobs:
   ui-aws:
-    if: ${{ inputs.environment == 'aws' }}
     runs-on: ubuntu-latest
     env:
-      # Prefer manual input; else secret; else fail in sanity check
-      VAULTWARDEN_URL: ${{ inputs.base_url != '' && inputs.base_url || secrets.VW_BASE_URL }}
+      VAULTWARDEN_URL: ${{ inputs.base_url }}
       VW_EMAIL:        ${{ inputs.ui_email != '' && inputs.ui_email || secrets.VW_EMAIL }}
       VW_PASSWORD:     ${{ inputs.ui_password != '' && inputs.ui_password || secrets.VW_PASSWORD }}
       HEADLESS:        ${{ inputs.headless }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
 
@@ -44,21 +41,23 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y curl xvfb
+
       - uses: browser-actions/setup-chrome@v1
         with: { chrome-version: stable }
+
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest-html
+          pip install -r requirements.txt pytest-html allure-pytest
 
       - name: Sanity check env
         run: |
           if [ -z "${VAULTWARDEN_URL}" ]; then
-            echo "VAULTWARDEN_URL is empty. Provide base_url input or set VW_BASE_URL secret." >&2
+            echo "VAULTWARDEN_URL is empty. Provide base_url input." >&2
             exit 1
           fi
           if [ -z "${VW_EMAIL}" ] || [ -z "${VW_PASSWORD}" ]; then
-            echo "VW_EMAIL/VW_PASSWORD missing. Provide ui_email/ui_password inputs or set secrets." >&2
+            echo "VW_EMAIL/VW_PASSWORD missing. Provide inputs or set secrets." >&2
             exit 1
           fi
 
@@ -68,120 +67,59 @@ jobs:
           URL="${VAULTWARDEN_URL%/}/alive?ngrok-skip-browser-warning=true"
           echo "Probing: $URL"
           for i in {1..120}; do
-            # Fetch body & code (GET). Follow redirects.
             CODE=$(curl -sS -L \
               -H "ngrok-skip-browser-warning: true" \
               -A "vw-ci-bot/1.0" \
               -o resp.html -w "%{http_code}" \
               "$URL" || echo 000)
-
             if [ "$CODE" = "200" ]; then
               echo "Target is up (200): ${VAULTWARDEN_URL}"
-              rm -f resp.html
-              exit 0
+              rm -f resp.html; exit 0
             fi
-
-            # If ngrok interstitial shows up as 400, allow it and proceed
             if [ "$CODE" = "400" ] && grep -qi "ngrok" resp.html; then
-              echo "Ngrok interstitial detected (400 with ngrok content) — treating as UP."
-              rm -f resp.html
-              exit 0
+              echo "Ngrok interstitial detected — treating as UP."
+              rm -f resp.html; exit 0
             fi
-
             sleep 2
           done
           echo "Target did not become healthy in time: ${VAULTWARDEN_URL}" >&2
-          echo "---- Debug last response ----"
           sed -n '1,120p' resp.html || true
           rm -f resp.html
           exit 1
 
-      - name: Run UI tests
+      - name: Run UI tests (with Allure results)
         run: |
-          mkdir -p reports
+          mkdir -p reports allure-results
           xvfb-run -a python -m pytest -q tests/ui \
             --maxfail=1 \
+            --alluredir=allure-results \
             --html=reports/ui.html --self-contained-html \
             --junitxml=reports/ui-junit.xml
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload raw reports
         if: always()
+        uses: actions/upload-artifact@v4
         with:
-          name: ui-reports-aws
-          path: reports/*
+          name: ui-reports
+          path: |
+            reports/*
+            allure-results/*
 
-  ui-local:
-    if: ${{ inputs.environment == 'local' }}
-    runs-on: ubuntu-latest
-
-    services:
-      vaultwarden:
-        image: vaultwarden/server:latest
-        ports:
-          - "3000:80"
+      # Build + publish Allure to gh-pages branch
+      - name: Publish Allure report to GitHub Pages
+        if: always()
+        uses: simple-elf/allure-report-action@v1.7
+        with:
+          allure_results: allure-results
+          gh_pages: gh-pages
+          allure_report: allure-report
+          allure_history: allure-history
         env:
-          SIGNUPS_ALLOWED: "true"
-          WEBSOCKET_ENABLED: "true"
-          I_REALLY_WANT_VOLATILE_STORAGE: "true"
-        options: >-
-          --health-cmd "curl -fsS http://localhost:80/alive || exit 1"
-          --health-interval=5s
-          --health-retries=30
-          --health-timeout=3s
-          --health-start-period=5s
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    env:
-      VAULTWARDEN_URL: ${{ inputs.base_url != '' && inputs.base_url || 'http://localhost:3000' }}
-      VW_EMAIL:        ${{ inputs.ui_email != '' && inputs.ui_email || secrets.VW_EMAIL }}
-      VW_PASSWORD:     ${{ inputs.ui_password != '' && inputs.ui_password || secrets.VW_PASSWORD }}
-      HEADLESS:        ${{ inputs.headless }}
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
-
-      - name: Install system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y curl xvfb
-      - uses: browser-actions/setup-chrome@v1
-        with: { chrome-version: stable }
-      - name: Install Python deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest-html
-
-      - name: Wait for Vaultwarden (local)
-        run: |
-          for i in {1..90}; do
-            if curl -fsS "${VAULTWARDEN_URL}/alive" >/dev/null; then
-              echo "Local Vaultwarden is up."
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Local Vaultwarden did not become healthy in time" >&2
-          docker ps -a || true
-          exit 1
-
-      - name: Sanity check creds
-        run: |
-          if [ -z "${VW_EMAIL}" ] || [ -z "${VW_PASSWORD}" ]; then
-            echo "VW_EMAIL/VW_PASSWORD missing. Provide ui_email/ui_password inputs or set secrets." >&2
-            exit 1
-          fi
-
-      - name: Run UI tests
-        run: |
-          mkdir -p reports
-          xvfb-run -a python -m pytest -q tests/ui \
-            --maxfail=1 \
-            --html=reports/ui.html --self-contained-html \
-            --junitxml=reports/ui-junit.xml
-
-      - uses: actions/upload-artifact@v4
+      - name: Echo Allure URL
         if: always()
-        with:
-          name: ui-reports-local
-          path: reports/*
+        run: |
+          REPO="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          echo "Allure report will be available at GitHub Pages (gh-pages branch)."
+          echo "Repository: $REPO"
