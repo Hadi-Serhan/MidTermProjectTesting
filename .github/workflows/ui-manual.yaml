@@ -9,7 +9,7 @@ on:
         description: "UI email"
         required: false
       ui_password:
-        description: "UI password" 
+        description: "UI password"
         required: false
       headless:
         description: "Run headless"
@@ -19,9 +19,13 @@ on:
         options: ["true","false"]
 
 permissions:
-  contents: write   # needed to push gh-pages
-  pages: write      # needed to publish to GitHub Pages
-  id-token: write   # harmless default; not strictly required
+  contents: read
+  pages: write         # publish to GitHub Pages
+  id-token: write      # required by actions/deploy-pages
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
 
 jobs:
   ui-aws:
@@ -31,6 +35,7 @@ jobs:
       VW_EMAIL:        ${{ inputs.ui_email != '' && inputs.ui_email || secrets.VW_EMAIL }}
       VW_PASSWORD:     ${{ inputs.ui_password != '' && inputs.ui_password || secrets.VW_PASSWORD }}
       HEADLESS:        ${{ inputs.headless }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -105,8 +110,7 @@ jobs:
             reports/*
             allure-results/*
 
-
-      # Build Allure report using CLI (no gh-pages branch)
+      # Build Allure report (static site)
       - name: Set up Java (for Allure CLI)
         if: always()
         uses: actions/setup-java@v4
@@ -116,17 +120,17 @@ jobs:
 
       - name: Install Allure CLI
         if: always()
-        run: |
-          npm i -g allure-commandline --no-audit --no-fund
+        run: npm i -g allure-commandline --no-audit --no-fund
 
       - name: Generate Allure HTML
         if: always()
         run: |
           allure generate allure-results --clean -o allure-report
           test -f allure-report/index.html
+          # prevent Jekyll from ignoring assets
+          touch allure-report/.nojekyll
 
-          
-      # Publish Allure HTML to GitHub Pages (from this workflow run)
+      # Publish Allure HTML to GitHub Pages (artifact -> Pages)
       - name: Setup Pages
         if: always()
         uses: actions/configure-pages@v5
@@ -141,6 +145,11 @@ jobs:
         if: always()
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          enablement: true               # auto-enable Pages for Actions source
+        environment:
+          name: github-pages
+          url: ${{ steps.deployment.outputs.page_url }}
 
       - name: Allure URL
         if: always()
