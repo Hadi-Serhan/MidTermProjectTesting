@@ -144,4 +144,8 @@ jobs:
 
       - name: Allure URL
         if: always()
-        run: echo "Allure report: ${{ steps.deployment.outputs.page_url }}"
+        env:
+          ALLURE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          echo "Allure report: ${ALLURE_URL}"
+          echo "::notice title=Allure Report::${ALLURE_URL}"
