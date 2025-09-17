@@ -19,7 +19,7 @@ on:
         options: ["true","false"]
 
 permissions:
-  contents: write   # needed to push gh-pages
+  contents: read   
   pages: write      # needed to publish to GitHub Pages
   id-token: write   # harmless default; not strictly required
 
@@ -141,6 +141,8 @@ jobs:
         if: always()
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          enablement: true        # <-- auto-enable Pages if not configured
 
       - name: Allure URL
         if: always()
