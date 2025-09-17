@@ -2,7 +2,6 @@
 import os
 from tests.ui.pages.login_page import LoginPage
 from tests.ui.base_ui import BaseVaultwardenTest  
-
 EMAIL = os.getenv("VW_EMAIL", "hadixserhan@gmail.com")
 PASSWORD = os.getenv("VW_PASSWORD", "Hadi123456789123")
 
