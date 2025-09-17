@@ -1,4 +1,4 @@
-name: CI
+name: CI (API)
 
 on:
   push:
@@ -8,21 +8,13 @@ permissions:
   contents: read
 
 jobs:
-  tests:
+  api-aws:
     runs-on: ubuntu-latest
 
-    services:
-      vaultwarden:
-        image: vaultwarden/server:latest
-        ports:
-          - 3000:80
-        env:
-          SIGNUPS_ALLOWED: "true"
-          WEBSOCKET_ENABLED: "true"
-          I_REALLY_WANT_VOLATILE_STORAGE: "true"
-
     env:
-      VAULTWARDEN_URL: "http://localhost:3000"
+      VAULTWARDEN_URL: ${{ secrets.VW_BASE_URL }}          # e.g. https://<your-reserved>.ngrok-free.app
+      CLIENT_ID:        ${{ secrets.VW_CLIENT_ID }}        # from Vaultwarden → Settings → Keys
+      CLIENT_SECRET:    ${{ secrets.VW_CLIENT_SECRET }}    # from Vaultwarden → Settings → Keys
 
     steps:
       - name: Checkout
@@ -33,54 +25,62 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y curl xvfb
-
-      - name: Install Chrome
-        uses: browser-actions/setup-chrome@v1
-        with:
-          chrome-version: stable
-
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest-html pytest-metadata
+          pip install -r requirements.txt pytest-html pytest-metadata python-dotenv requests
 
-      - name: Wait for Vaultwarden (local service)
+      - name: Sanity check secrets
         run: |
+          test -n "${VAULTWARDEN_URL}" || (echo "VW_BASE_URL secret missing" >&2; exit 1)
+          test -n "${CLIENT_ID}"       || (echo "VW_CLIENT_ID secret missing" >&2; exit 1)
+          test -n "${CLIENT_SECRET}"   || (echo "VW_CLIENT_SECRET secret missing" >&2; exit 1)
+
+      - name: Wait for target /alive (ngrok-aware)
+        run: |
+          set -euo pipefail
+          URL="${VAULTWARDEN_URL%/}/alive?ngrok-skip-browser-warning=true"
+          echo "Probing: $URL"
           for i in {1..120}; do
-            if curl -fsS "${VAULTWARDEN_URL}/alive" >/dev/null; then
-              echo "Vaultwarden is up."
+            CODE=$(curl -sS -L \
+              -H "ngrok-skip-browser-warning: true" \
+              -A "vw-ci-bot/1.0" \
+              -o resp.html -w "%{http_code}" \
+              "$URL" || echo 000)
+
+            if [ "$CODE" = "200" ]; then
+              echo "Target is up (200): ${VAULTWARDEN_URL}"
+              rm -f resp.html
               exit 0
             fi
+
+            # First-hit ngrok interstitial sometimes returns 400; accept it as 'up'
+            if [ "$CODE" = "400" ] && grep -qi "ngrok" resp.html; then
+              echo "Ngrok interstitial detected (400) — treating as UP."
+              rm -f resp.html
+              exit 0
+            fi
+
             sleep 2
           done
-          echo "Vaultwarden did not become healthy in time" >&2
-          docker ps -a || true
-          ID=$(docker ps -aqf "publish=3000")
-          if [ -n "$ID" ]; then docker logs "$ID" || true; fi
+          echo "Target did not become healthy in time: ${VAULTWARDEN_URL}" >&2
+          sed -n '1,120p' resp.html || true
+          rm -f resp.html
           exit 1
 
-      - name: Run API health+version with reports
+      - name: Run API tests (ALL)
         run: |
           mkdir -p reports
-          python -m pytest tests/api -k "health or version" --maxfail=1 \
+          # No -k filter → run ALL tests in tests/api, including those that require CLIENT_ID/SECRET
+          python -m pytest tests/api \
+            --maxfail=1 \
             --junitxml=reports/junit-api.xml \
             --html=reports/report-api.html --self-contained-html \
             -q
 
-      - name: Upload reports
+      - name: Upload API reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: api-reports
           path: reports/*
-
-      - name: Dump Vaultwarden logs on failure
-        if: failure()
-        run: |
-          docker ps -a || true
-          ID=$(docker ps -aqf "publish=3000")
-          if [ -n "$ID" ]; then docker logs "$ID" || true; fi
