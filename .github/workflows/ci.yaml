@@ -1,40 +1,41 @@
-name: CI (API)
+name: API CI
 
 on:
   push:
+    branches: [ main ]
   pull_request:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  api-aws:
+  test-api:
     runs-on: ubuntu-latest
-
     env:
-      VAULTWARDEN_URL: ${{ secrets.VW_BASE_URL }}          # e.g. https://<your-reserved>.ngrok-free.app
-      CLIENT_ID:        ${{ secrets.VW_CLIENT_ID }}        # from Vaultwarden → Settings → Keys
-      CLIENT_SECRET:    ${{ secrets.VW_CLIENT_SECRET }}    # from Vaultwarden → Settings → Keys
-
+      VAULTWARDEN_URL: ${{ secrets.VW_BASE_URL }}
+      CLIENT_ID:       ${{ secrets.VW_CLIENT_ID }}
+      CLIENT_SECRET:   ${{ secrets.VW_CLIENT_SECRET }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest-html pytest-metadata python-dotenv requests
+          pip install -r requirements.txt pytest-html pytest-metadata allure-pytest
 
-      - name: Sanity check secrets
-        run: |
-          test -n "${VAULTWARDEN_URL}" || (echo "VW_BASE_URL secret missing" >&2; exit 1)
-          test -n "${CLIENT_ID}"       || (echo "VW_CLIENT_ID secret missing" >&2; exit 1)
-          test -n "${CLIENT_SECRET}"   || (echo "VW_CLIENT_SECRET secret missing" >&2; exit 1)
 
       - name: Wait for target /alive (ngrok-aware)
         run: |
@@ -47,20 +48,14 @@ jobs:
               -A "vw-ci-bot/1.0" \
               -o resp.html -w "%{http_code}" \
               "$URL" || echo 000)
-
             if [ "$CODE" = "200" ]; then
               echo "Target is up (200): ${VAULTWARDEN_URL}"
-              rm -f resp.html
-              exit 0
+              rm -f resp.html; exit 0
             fi
-
-            # First-hit ngrok interstitial sometimes returns 400; accept it as 'up'
             if [ "$CODE" = "400" ] && grep -qi "ngrok" resp.html; then
-              echo "Ngrok interstitial detected (400) — treating as UP."
-              rm -f resp.html
-              exit 0
+              echo "Ngrok interstitial detected — treating as UP."
+              rm -f resp.html; exit 0
             fi
-
             sleep 2
           done
           echo "Target did not become healthy in time: ${VAULTWARDEN_URL}" >&2
@@ -68,19 +63,54 @@ jobs:
           rm -f resp.html
           exit 1
 
-      - name: Run API tests (ALL)
+      - name: Run API tests (Allure results)
         run: |
-          mkdir -p reports
-          # No -k filter → run ALL tests in tests/api, including those that require CLIENT_ID/SECRET
+          mkdir -p reports allure-results
           python -m pytest tests/api \
             --maxfail=1 \
+            --alluredir=allure-results \
             --junitxml=reports/junit-api.xml \
             --html=reports/report-api.html --self-contained-html \
             -q
 
-      - name: Upload API reports
+      - name: Upload raw reports (artifact)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: api-reports
-          path: reports/*
+          path: |
+            reports/*
+            allure-results/*
+
+      # Build Allure HTML with CLI
+      - name: Setup Node (for Allure CLI)
+        if: always()
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Allure CLI
+        if: always()
+        run: npm i -g allure-commandline@2.30.0 --no-progress
+
+      - name: Generate Allure report
+        if: always()
+        run: allure generate allure-results -o allure-report --clean
+
+      - name: Upload Pages artifact (Allure HTML)
+        if: always()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: allure-report
+
+  deploy-pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test-api
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
