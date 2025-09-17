@@ -6,10 +6,10 @@ on:
       base_url:
         required: true
       ui_email:
-        description: "UI email 
+        description: "UI email"
         required: false
       ui_password:
-        description: "UI password 
+        description: "UI password" 
         required: false
       headless:
         description: "Run headless"
