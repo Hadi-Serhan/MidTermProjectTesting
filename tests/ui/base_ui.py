@@ -26,6 +26,8 @@ class BaseVaultwardenTest(unittest.TestCase):
             "autofill.profile_enabled": False,
             "autofill.credit_card_enabled": False,
             "credentials_enable_autosignin": False,
+            "profile.password_manager_leak_detection": False,
+            "password_manager_leak_detection": False,
         }
         opts.add_experimental_option("prefs", prefs)
         opts.add_argument("--disable-save-password-bubble")
