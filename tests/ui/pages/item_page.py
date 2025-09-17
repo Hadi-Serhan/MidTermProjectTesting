@@ -93,7 +93,7 @@ class ItemPage(BasePage):
                 try:
                     b.click()
                 except ElementClickInterceptedException:
-                    self._wait_for_no_overlay(10)
+                    self._wait_for_no_overlay(15)
                     self.driver.execute_script("arguments[0].click();", b)
                 return self
         raise AssertionError("Delete menu item not found")

@@ -19,15 +19,18 @@ class BaseVaultwardenTest(unittest.TestCase):
         if headless:
             opts.add_argument("--headless=new")
 
-        # 🔒 Disable Chrome password manager + leak detection popups
+        # Disable Chrome password manager + leak detection popups
         prefs = {
             "credentials_enable_service": False,
             "profile.password_manager_enabled": False,
             "autofill.profile_enabled": False,
             "autofill.credit_card_enabled": False,
+            "credentials_enable_autosignin": False,
         }
         opts.add_experimental_option("prefs", prefs)
         opts.add_argument("--disable-save-password-bubble")
+        opts.add_argument("--disable-extensions")  # cuts off GPM UI in many builds
+        opts.add_argument("--disable-component-extensions-with-background-pages")
         opts.add_argument("--disable-features=PasswordLeakDetection,PasswordReuseDetection,PasswordManagerOnboarding")
 
         # Make ngrok skip the abuse splash (works in CI and locally)
