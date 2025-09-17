@@ -62,23 +62,38 @@ jobs:
             exit 1
           fi
 
-      - name: Wait for target /alive
+      - name: Wait for target /alive (ngrok-aware)
         run: |
+          set -euo pipefail
           URL="${VAULTWARDEN_URL%/}/alive?ngrok-skip-browser-warning=true"
+          echo "Probing: $URL"
           for i in {1..120}; do
-            CODE=$(curl -sS -o /dev/null -w "%{http_code}" -L \
-                    -H "ngrok-skip-browser-warning: true" \
-                    -A "vw-ci-bot/1.0" \
-                    "$URL")
-            if [ "$CODE" -eq 200 ]; then
-              echo "Target is up: ${VAULTWARDEN_URL}"
+            # Fetch body & code (GET). Follow redirects.
+            CODE=$(curl -sS -L \
+              -H "ngrok-skip-browser-warning: true" \
+              -A "vw-ci-bot/1.0" \
+              -o resp.html -w "%{http_code}" \
+              "$URL" || echo 000)
+
+            if [ "$CODE" = "200" ]; then
+              echo "Target is up (200): ${VAULTWARDEN_URL}"
+              rm -f resp.html
               exit 0
             fi
+
+            # If ngrok interstitial shows up as 400, allow it and proceed
+            if [ "$CODE" = "400" ] && grep -qi "ngrok" resp.html; then
+              echo "Ngrok interstitial detected (400 with ngrok content) — treating as UP."
+              rm -f resp.html
+              exit 0
+            fi
+
             sleep 2
           done
           echo "Target did not become healthy in time: ${VAULTWARDEN_URL}" >&2
-          # Debug: show real response
-          curl -i -L -H "ngrok-skip-browser-warning: true" -A "vw-ci-bot/1.0" "$URL" || true
+          echo "---- Debug last response ----"
+          sed -n '1,120p' resp.html || true
+          rm -f resp.html
           exit 1
 
       - name: Run UI tests

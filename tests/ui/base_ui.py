@@ -19,6 +19,17 @@ class BaseVaultwardenTest(unittest.TestCase):
         if headless:
             opts.add_argument("--headless=new")
 
+        # 🔒 Disable Chrome password manager + leak detection popups
+        prefs = {
+            "credentials_enable_service": False,
+            "profile.password_manager_enabled": False,
+            "autofill.profile_enabled": False,
+            "autofill.credit_card_enabled": False,
+        }
+        opts.add_experimental_option("prefs", prefs)
+        opts.add_argument("--disable-save-password-bubble")
+        opts.add_argument("--disable-features=PasswordLeakDetection,PasswordReuseDetection,PasswordManagerOnboarding")
+
         # Make ngrok skip the abuse splash (works in CI and locally)
         is_ci = os.getenv("GITHUB_ACTIONS", "").lower() == "true" or os.getenv("CI", "").lower() == "true"
         ua = "vw-ci-bot/1.0" if is_ci else "vw-local-tester/1.0"
@@ -82,15 +93,3 @@ class BaseVaultwardenTest(unittest.TestCase):
                 f.write(self.driver.page_source)
         except Exception:
             pass
-
-    def login(self, email, password):
-        try:
-            self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[type="email"]'))).send_keys(email)
-            self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[type="submit"]'))).click()
-            self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, 'input[type="password"]'))).send_keys(password)
-            self.wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'button[type="submit"]'))).click()
-            self.wait.until(lambda d: "Vault" in (d.title or "") or
-                            d.find_elements(By.CSS_SELECTOR, '[data-testid="tab-vault"], [data-testid="tab-all-items"]'))
-        except Exception:
-            self.debug_dump()
-            raise
