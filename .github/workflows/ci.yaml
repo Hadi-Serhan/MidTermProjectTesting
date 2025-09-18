@@ -6,11 +6,13 @@ on:
   pull_request:
 
 permissions:
-  contents: write   # commit Allure to main:/docs/ci
+  contents: read
+  pages: write
+  id-token: write
 
 concurrency:
-  group: pages-main          # serialize pushes that touch /docs
-  cancel-in-progress: false
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-api:
@@ -19,11 +21,9 @@ jobs:
       VAULTWARDEN_URL: ${{ secrets.VW_BASE_URL }}
       CLIENT_ID:       ${{ secrets.VW_CLIENT_ID }}
       CLIENT_SECRET:   ${{ secrets.VW_CLIENT_SECRET }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -31,15 +31,11 @@ jobs:
           python-version: "3.12"
           cache: pip
 
-      - name: Install system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y rsync
-
       - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest-html pytest-metadata allure-pytest
+
 
       - name: Wait for target /alive (ngrok-aware)
         run: |
@@ -86,6 +82,7 @@ jobs:
             reports/*
             allure-results/*
 
+      # Build Allure HTML with CLI
       - name: Setup Node (for Allure CLI)
         if: always()
         uses: actions/setup-node@v4
@@ -96,35 +93,24 @@ jobs:
         if: always()
         run: npm i -g allure-commandline@2.30.0 --no-progress
 
-      - name: Generate Allure HTML
+      - name: Generate Allure report
         if: always()
         run: allure generate allure-results -o allure-report --clean
 
-      # Publish into /docs/ci without touching /docs/ui
-      - name: Commit Allure report to /docs/ci (main)
-        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          set -euo pipefail
-          mkdir -p docs/ci
-          rsync -a --delete allure-report/ docs/ci/
-          # Create root index if missing (no heredoc -> no indentation issues)
-          if [ ! -f docs/index.html ]; then
-            printf '%s\n' \
-              '<!doctype html><meta charset="utf-8">' \
-              '<title>Allure Reports</title>' \
-              '<h1>Allure Reports</h1>' \
-              '<ul>' \
-              '  <li><a href="./ci/">API CI Report</a></li>' \
-              '  <li><a href="./ui/">UI Manual Report</a></li>' \
-              '</ul>' > docs/index.html
-          fi
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/ci docs/index.html
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-          else
-            git commit -m "docs(ci): publish Allure report to /docs/ci [skip ci]"
-            git pull --rebase
-            git push
-          fi
+      - name: Upload Pages artifact (Allure HTML)
+        if: always()
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: allure-report
+
+  deploy-pages:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test-api
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
