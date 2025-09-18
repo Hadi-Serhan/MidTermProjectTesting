@@ -107,22 +107,24 @@ jobs:
           set -euo pipefail
           mkdir -p docs/ci
           rsync -a --delete allure-report/ docs/ci/
-          # create a simple index if missing
+          # Create root index if missing (no heredoc -> no indentation issues)
           if [ ! -f docs/index.html ]; then
-            cat > docs/index.html <<'HTML'
-            <!doctype html><meta charset="utf-8">
-            <title>Allure Reports</title>
-            <h1>Allure Reports</h1>
-            <ul>
-              <li><a href="./ci/">API CI Report</a></li>
-              <li><a href="./ui/">UI Manual Report</a></li>
-            </ul>
-            HTML
+            printf '%s\n' \
+              '<!doctype html><meta charset="utf-8">' \
+              '<title>Allure Reports</title>' \
+              '<h1>Allure Reports</h1>' \
+              '<ul>' \
+              '  <li><a href="./ci/">API CI Report</a></li>' \
+              '  <li><a href="./ui/">UI Manual Report</a></li>' \
+              '</ul>' > docs/index.html
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/ci docs/index.html
-          git diff --cached --quiet && { echo "No changes to commit."; exit 0; }
-          git commit -m "docs(ci): publish Allure report to /docs/ci [skip ci]"
-          git pull --rebase
-          git push
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "docs(ci): publish Allure report to /docs/ci [skip ci]"
+            git pull --rebase
+            git push
+          fi

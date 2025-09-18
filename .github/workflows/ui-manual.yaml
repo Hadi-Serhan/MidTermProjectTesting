@@ -127,29 +127,30 @@ jobs:
           test -f allure-report/index.html
           touch allure-report/.nojekyll
 
-      # 👉 Publish into /docs/ui without touching /docs/ci
+      # Publish into /docs/ui without touching /docs/ci
       - name: Commit Allure report to /docs/ui (main)
         if: always()
         run: |
           set -euo pipefail
           mkdir -p docs/ui
           rsync -a --delete allure-report/ docs/ui/
-          # don't overwrite root index if it exists
           if [ ! -f docs/index.html ]; then
-            cat > docs/index.html <<'HTML'
-            <!doctype html><meta charset="utf-8">
-            <title>Allure Reports</title>
-            <h1>Allure Reports</h1>
-            <ul>
-              <li><a href="./ci/">API CI Report</a></li>
-              <li><a href="./ui/">UI Manual Report</a></li>
-            </ul>
-            HTML
+            printf '%s\n' \
+              '<!doctype html><meta charset="utf-8">' \
+              '<title>Allure Reports</title>' \
+              '<h1>Allure Reports</h1>' \
+              '<ul>' \
+              '  <li><a href="./ci/">API CI Report</a></li>' \
+              '  <li><a href="./ui/">UI Manual Report</a></li>' \
+              '</ul>' > docs/index.html
           fi
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/ui docs/index.html
-          git diff --cached --quiet && { echo "No changes to commit."; exit 0; }
-          git commit -m "docs(ui): publish Allure report to /docs/ui [skip ci]"
-          git pull --rebase
-          git push
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "docs(ui): publish Allure report to /docs/ui [skip ci]"
+            git pull --rebase
+            git push
+          fi
