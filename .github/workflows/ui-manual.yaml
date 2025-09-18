@@ -19,13 +19,11 @@ on:
         options: ["true","false"]
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: pages-main
+  cancel-in-progress: false
 
 jobs:
   ui-tests:
@@ -38,6 +36,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
 
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
@@ -110,7 +109,6 @@ jobs:
             reports/*
             allure-results/*
 
-      # Build Allure static site
       - name: Set up Java (for Allure CLI)
         if: always()
         uses: actions/setup-java@v4
@@ -127,36 +125,31 @@ jobs:
         run: |
           allure generate allure-results --clean -o allure-report
           test -f allure-report/index.html
-          touch allure-report/.nojekyll   # ensure assets are served
+          touch allure-report/.nojekyll
 
-      - name: Upload Pages artifact (Allure HTML)
+      # 👉 Publish into /docs/ui without touching /docs/ci
+      - name: Commit Allure report to /docs/ui (main)
         if: always()
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: allure-report
-
-  deploy-pages:
-    # deploy even if tests failed, so you can inspect the report
-    if: always()
-    needs: ui-tests
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-        with:
-          enablement: true   # auto-enable "GitHub Actions" as the Pages source
-
-      - name: Allure URL
-        env:
-          ALLURE_URL: ${{ steps.deployment.outputs.page_url }}
         run: |
-          echo "Allure report: ${ALLURE_URL}"
-          echo "::notice title=Allure Report::${ALLURE_URL}"
-#  zdc
+          set -euo pipefail
+          mkdir -p docs/ui
+          rsync -a --delete allure-report/ docs/ui/
+          # don't overwrite root index if it exists
+          if [ ! -f docs/index.html ]; then
+            cat > docs/index.html <<'HTML'
+            <!doctype html><meta charset="utf-8">
+            <title>Allure Reports</title>
+            <h1>Allure Reports</h1>
+            <ul>
+              <li><a href="./ci/">API CI Report</a></li>
+              <li><a href="./ui/">UI Manual Report</a></li>
+            </ul>
+            HTML
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/ui docs/index.html
+          git diff --cached --quiet && { echo "No changes to commit."; exit 0; }
+          git commit -m "docs(ui): publish Allure report to /docs/ui [skip ci]"
+          git pull --rebase
+          git push

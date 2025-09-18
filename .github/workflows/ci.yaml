@@ -6,13 +6,12 @@ on:
   pull_request:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write   # we commit report files into main
+  # pages/id-token not needed when deploying from /docs on main
 
 concurrency:
-  group: pages-${{ github.ref }}
-  cancel-in-progress: true
+  group: pages-main          # serialize writes to /docs
+  cancel-in-progress: false
 
 jobs:
   test-api:
@@ -24,6 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -35,7 +36,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt pytest-html pytest-metadata allure-pytest
-
 
       - name: Wait for target /alive (ngrok-aware)
         run: |
@@ -82,7 +82,6 @@ jobs:
             reports/*
             allure-results/*
 
-      # Build Allure HTML with CLI
       - name: Setup Node (for Allure CLI)
         if: always()
         uses: actions/setup-node@v4
@@ -93,24 +92,157 @@ jobs:
         if: always()
         run: npm i -g allure-commandline@2.30.0 --no-progress
 
-      - name: Generate Allure report
+      - name: Generate Allure HTML
         if: always()
         run: allure generate allure-results -o allure-report --clean
 
-      - name: Upload Pages artifact (Allure HTML)
-        if: always()
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: allure-report
+      # 👉 Publish into /docs/ci without touching /docs/ui
+      - name: Commit Allure report to /docs/ci (main)
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          mkdir -p docs/ci
+          rsync -a --delete allure-report/ docs/ci/   # only cleans inside /ci
+          # create a simple root index if missing
+          if [ ! -f docs/index.html ]; then
+            cat > docs/index.html <<'HTML'
+            <!doctype html><meta charset="utf-8">
+            <title>Allure Reports</title>
+            <h1>Allure Reports</h1>
+            <ul>
+              <li><a href="./ci/">API CI Report</a></li>
+              <li><a href="./ui/">UI Manual Report</a></li>
+            </ul>
+            HTML
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/ci docs/index.html
+          git diff --cached --quiet && { echo "No changes to commit."; exit 0; }
+          git commit -m "docs(ci): publish Allure report to /docs/ci [skip ci]"
+          git pull --rebase
+          git push
+name: API CI
 
-  deploy-pages:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: test-api
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: write   # we commit report files into main
+  # pages/id-token not needed when deploying from /docs on main
+
+concurrency:
+  group: pages-main          # serialize writes to /docs
+  cancel-in-progress: false
+
+jobs:
+  test-api:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      VAULTWARDEN_URL: ${{ secrets.VW_BASE_URL }}
+      CLIENT_ID:       ${{ secrets.VW_CLIENT_ID }}
+      CLIENT_SECRET:   ${{ secrets.VW_CLIENT_SECRET }}
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest-html pytest-metadata allure-pytest
+
+      - name: Wait for target /alive (ngrok-aware)
+        run: |
+          set -euo pipefail
+          URL="${VAULTWARDEN_URL%/}/alive?ngrok-skip-browser-warning=true"
+          echo "Probing: $URL"
+          for i in {1..120}; do
+            CODE=$(curl -sS -L \
+              -H "ngrok-skip-browser-warning: true" \
+              -A "vw-ci-bot/1.0" \
+              -o resp.html -w "%{http_code}" \
+              "$URL" || echo 000)
+            if [ "$CODE" = "200" ]; then
+              echo "Target is up (200): ${VAULTWARDEN_URL}"
+              rm -f resp.html; exit 0
+            fi
+            if [ "$CODE" = "400" ] && grep -qi "ngrok" resp.html; then
+              echo "Ngrok interstitial detected — treating as UP."
+              rm -f resp.html; exit 0
+            fi
+            sleep 2
+          done
+          echo "Target did not become healthy in time: ${VAULTWARDEN_URL}" >&2
+          sed -n '1,120p' resp.html || true
+          rm -f resp.html
+          exit 1
+
+      - name: Run API tests (Allure results)
+        run: |
+          mkdir -p reports allure-results
+          python -m pytest tests/api \
+            --maxfail=1 \
+            --alluredir=allure-results \
+            --junitxml=reports/junit-api.xml \
+            --html=reports/report-api.html --self-contained-html \
+            -q
+
+      - name: Upload raw reports (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-reports
+          path: |
+            reports/*
+            allure-results/*
+
+      - name: Setup Node (for Allure CLI)
+        if: always()
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Allure CLI
+        if: always()
+        run: npm i -g allure-commandline@2.30.0 --no-progress
+
+      - name: Generate Allure HTML
+        if: always()
+        run: allure generate allure-results -o allure-report --clean
+
+      # 👉 Publish into /docs/ci without touching /docs/ui
+      - name: Commit Allure report to /docs/ci (main)
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          mkdir -p docs/ci
+          rsync -a --delete allure-report/ docs/ci/   # only cleans inside /ci
+          # create a simple root index if missing
+          if [ ! -f docs/index.html ]; then
+            cat > docs/index.html <<'HTML'
+            <!doctype html><meta charset="utf-8">
+            <title>Allure Reports</title>
+            <h1>Allure Reports</h1>
+            <ul>
+              <li><a href="./ci/">API CI Report</a></li>
+              <li><a href="./ui/">UI Manual Report</a></li>
+            </ul>
+            HTML
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/ci docs/index.html
+          git diff --cached --quiet && { echo "No changes to commit."; exit 0; }
+          git commit -m "docs(ci): publish Allure report to /docs/ci [skip ci]"
+          git pull --rebase
+          git push
