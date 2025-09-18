@@ -1,0 +1,6 @@
+"DESCRIPTION","DURATION IN MS","NAME","PARENT SUITE","START TIME","STATUS","STOP TIME","SUB SUITE","SUITE","TEST CLASS","TEST METHOD"
+"","339","test_health_api_alive","tests.api","Thu Sep 18 07:25:07 UTC 2025","passed","Thu Sep 18 07:25:07 UTC 2025","","test_api","",""
+"","338","test_version","tests.api","Thu Sep 18 07:25:07 UTC 2025","passed","Thu Sep 18 07:25:08 UTC 2025","","test_api","",""
+"","340","test_health_alive","tests.api","Thu Sep 18 07:25:07 UTC 2025","passed","Thu Sep 18 07:25:07 UTC 2025","","test_api","",""
+"","692","test_account_profile","tests.api","Thu Sep 18 07:25:08 UTC 2025","passed","Thu Sep 18 07:25:08 UTC 2025","","test_api","",""
+"","673","test_list_ciphers","tests.api","Thu Sep 18 07:25:08 UTC 2025","passed","Thu Sep 18 07:25:09 UTC 2025","","test_api","",""
