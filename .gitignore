@@ -54,3 +54,9 @@ node_modules/
 # Misc
 *.swp
 *.swo
+
+
+# Allure
+allure-results/
+allure-report/
+allure-history/
