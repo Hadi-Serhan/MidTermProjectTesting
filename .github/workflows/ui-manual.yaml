@@ -91,6 +91,24 @@ jobs:
           sed -n '1,120p' resp.html || true
           rm -f resp.html
           exit 1
+      
+      - name: OAuth token smoke test (uses GitHub Secrets)
+        env:
+          VAULTWARDEN_URL: ${{ env.VAULTWARDEN_URL }}
+          CLIENT_ID:       ${{ secrets.VW_CLIENT_ID }}
+          CLIENT_SECRET:   ${{ secrets.VW_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          # Request a client_credentials token to verify the tunnel + creds work
+          curl -sS -L \
+            -H "ngrok-skip-browser-warning: true" \
+            -A "vw-ci-bot/1.0" \
+            --data-urlencode "grant_type=client_credentials" \
+            --data-urlencode "scope=api" \
+            --data-urlencode "client_id=${CLIENT_ID}" \
+            --data-urlencode "client_secret=${CLIENT_SECRET}" \
+            "${VAULTWARDEN_URL%/}/identity/connect/token" \
+            | jq -e '.access_token' >/dev/null
 
       - name: Run UI tests (with Allure results)
         run: |
