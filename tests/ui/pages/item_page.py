@@ -39,24 +39,18 @@ class ItemPage(BasePage):
         try:
             save_button.click()
         except ElementClickInterceptedException:
-            self._wait_for_no_overlay(10)
+            self._dismiss_backdrops(timeout=0.2)
             self.driver.execute_script("arguments[0].click();", save_button)
         return self
 
     def close_popup(self):
-        # Clear overlays
-        self._dismiss_dialogs(timeout=10)
+        self._dismiss_backdrops(timeout=0.2)
         return self
 
     def open_item_options_for(self, item_name):
-        # Make sure no overlay/dialog is still present
-        self._wait_for_no_overlay(10)
-
-        # Wait for table + first row
         self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table tbody")))
         self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table tbody tr[bitrow]")))
 
-        # Locate the row for this item name
         row_xpath = (
             "//table//tbody//tr[@bitrow]"
             "[.//button[@bitlink and contains(@title,'Edit item') "
@@ -68,7 +62,6 @@ class ItemPage(BasePage):
         except Exception:
             pass
 
-        # Options button
         try:
             btn = row.find_element(By.XPATH, ".//button[@aria-label='Options']")
         except Exception:
@@ -80,7 +73,7 @@ class ItemPage(BasePage):
         try:
             btn.click()
         except ElementClickInterceptedException:
-            self._wait_for_no_overlay(10)
+            self._dismiss_backdrops(timeout=0.2)
             self.driver.execute_script("arguments[0].click();", btn)
         return self
 
@@ -93,12 +86,15 @@ class ItemPage(BasePage):
                 try:
                     b.click()
                 except ElementClickInterceptedException:
-                    self._wait_for_no_overlay(15)
+                    self._dismiss_backdrops(timeout=0.2)
                     self.driver.execute_script("arguments[0].click();", b)
                 return self
         raise AssertionError("Delete menu item not found")
 
     def confirm_delete(self):
-        # confirmation dialog primary button (submit)
-        self.click_element(By.CSS_SELECTOR, 'button[type="submit"]')
+        try:
+            self.click_element(By.CSS_SELECTOR, 'button[type="submit"]')
+        except ElementClickInterceptedException:
+            self._dismiss_backdrops(timeout=0.2)
+            self.click_element(By.CSS_SELECTOR, 'button[type="submit"]')
         return self
