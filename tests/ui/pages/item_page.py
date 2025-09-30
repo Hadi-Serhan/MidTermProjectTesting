@@ -179,3 +179,19 @@ class ItemPage(BasePage):
             self._wait_for_no_overlay(2)
             self.driver.execute_script("arguments[0].click();", btn)
         return self
+
+
+    def click_restore_in_view(self):
+        """When viewing an item (in Trash), click the Restore button in the footer."""
+        xpath = "//cdk-dialog-container//footer//button[.//span[normalize-space()='Restore'] or normalize-space()='Restore']"
+        btn = self.wait.until(EC.element_to_be_clickable((By.XPATH, xpath)))
+        try:
+            self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", btn)
+        except Exception:
+            pass
+        try:
+            btn.click()
+        except ElementClickInterceptedException:
+            self._dismiss_backdrops(0.2)
+            self.driver.execute_script("arguments[0].click();", btn)
+        return self

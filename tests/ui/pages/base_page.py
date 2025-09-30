@@ -88,7 +88,7 @@ class BasePage:
         except Exception:
             pass
 
-    # ---------------- toast helpers ----------------
+    # ---------------- toast helpers (stale-safe) ----------------
     def _find_toast_messages(self):
         """
         Return list of (toast_element, message_text) for any *visible* toast-ish node.
@@ -96,7 +96,7 @@ class BasePage:
           1) ngx-toastr under [toastcontainer] #toast-container …
           2) polite live-region container: [role="status"] #toast-container …
           3) visible nodes with classes containing 'toast'/'notification'/'alert'
-        Always reads text via innerText (fallback to .text).
+        Always reads text via innerText (fallback to .text). Robust to stale elements.
         """
         results = []
         containers = []
@@ -106,16 +106,21 @@ class BasePage:
             containers += self.driver.find_elements(
                 By.CSS_SELECTOR, "[toastcontainer] #toast-container.toast-container"
             )
+        except Exception:
+            pass
+        try:
             containers += self.driver.find_elements(
                 By.CSS_SELECTOR, "#toast-container.toast-container"
             )
+        except Exception:
+            pass
+        try:
             containers += self.driver.find_elements(
                 By.CSS_SELECTOR, '[role="status"] #toast-container.toast-container'
             )
         except Exception:
             pass
 
-        # If no explicit container found, still scan page for visible toast-ish nodes.
         def _gather_in(container_or_root):
             sels = [
                 ".ngx-toastr",
@@ -132,62 +137,74 @@ class BasePage:
                     pass
             return found
 
-        # Search inside containers first
-        for cont in containers:
+        # If we didn't find explicit containers, search whole body
+        if not containers:
             try:
-                if not cont.is_displayed():
-                    continue
+                containers = [self.driver.find_element(By.TAG_NAME, "body")]
             except Exception:
+                containers = []
+
+        for cont in containers:
+            # skip invisible/stale containers
+            try:
+                if hasattr(cont, "is_displayed") and not cont.is_displayed():
+                    continue
+            except StaleElementReferenceException:
                 continue
+            except Exception:
+                pass
+
             candidates = _gather_in(cont)
             for node in candidates:
+                # ensure visible & not stale
                 try:
-                    if not node.is_displayed():
+                    if hasattr(node, "is_displayed") and not node.is_displayed():
                         continue
+                except StaleElementReferenceException:
+                    continue
                 except Exception:
                     pass
-                # prefer a dedicated message child if present
+
                 msg_text = ""
+                # try a dedicated message child
                 try:
                     msg_els = node.find_elements(By.CSS_SELECTOR, ".toast-message, .message")
-                    if msg_els:
+                except StaleElementReferenceException:
+                    continue
+                except Exception:
+                    msg_els = []
+
+                if msg_els:
+                    try:
                         msg_text = (self.driver.execute_script(
                             "return arguments[0].innerText || '';", msg_els[-1]
                         ) or "").strip()
-                except Exception:
-                    pass
-                if not msg_text:
-                    # fall back to the whole node's innerText
-                    try:
-                        msg_text = (self.driver.execute_script(
-                            "return arguments[0].innerText || '';", node
-                        ) or "").strip()
-                    except Exception:
-                        msg_text = (node.text or "").strip()
-                if msg_text:
-                    results.append((node, msg_text))
-
-        # If still nothing, do a page-wide sweep
-        if not results:
-            try:
-                roots = [self.driver.find_element(By.TAG_NAME, "body")]
-            except Exception:
-                roots = []
-            for root in roots:
-                for node in _gather_in(root):
-                    try:
-                        if not node.is_displayed():
-                            continue
+                    except StaleElementReferenceException:
+                        continue
                     except Exception:
                         pass
+
+                # fallback to node's innerText / text
+                if not msg_text:
                     try:
                         msg_text = (self.driver.execute_script(
                             "return arguments[0].innerText || '';", node
                         ) or "").strip()
+                    except StaleElementReferenceException:
+                        continue
                     except Exception:
-                        msg_text = (node.text or "").strip()
-                    if msg_text:
-                        results.append((node, msg_text))
+                        pass
+
+                    if not msg_text:
+                        try:
+                            msg_text = (node.text or "").strip()
+                        except StaleElementReferenceException:
+                            continue
+                        except Exception:
+                            pass
+
+                if msg_text:
+                    results.append((node, msg_text))
 
         return results
 
@@ -200,12 +217,15 @@ class BasePage:
                 By.CSS_SELECTOR,
                 ".toast-close-button, button[aria-label='Close'], button[title='Close']",
             ):
-                if btn.is_displayed():
-                    try:
-                        btn.click()
-                    except Exception:
-                        self.driver.execute_script("arguments[0].click();", btn)
-                    return
+                try:
+                    if btn.is_displayed():
+                        try:
+                            btn.click()
+                        except Exception:
+                            self.driver.execute_script("arguments[0].click();", btn)
+                        return
+                except StaleElementReferenceException:
+                    continue
         except Exception:
             pass
         # Otherwise click/tap the toast
@@ -221,7 +241,7 @@ class BasePage:
                              any_of: list | None = None, dismiss: bool = True):
         """
         Wait for a toast-ish node to show non-empty text, assert it matches expected_text (or any_of),
-        then optionally dismiss it.
+        then optionally dismiss it. Robust to stales while the DOM repaints.
         """
         wanted = [expected_text] if expected_text else []
         if any_of:
@@ -229,20 +249,50 @@ class BasePage:
         wanted = [w for w in wanted if w]
 
         # small grace so UI can render the toast after a click/save
-        self.driver.execute_script("return new Promise(r=>setTimeout(r, 120));")
+        try:
+            self.driver.execute_script("return new Promise(r=>setTimeout(r, 120));")
+        except Exception:
+            pass
 
-        deadline = self.driver.execute_script("return Date.now() + arguments[0]*1000;", timeout)
+        try:
+            deadline = self.driver.execute_script("return Date.now() + arguments[0]*1000;", timeout)
+        except Exception:
+            # fallback if JS is blocked for some reason
+            deadline = None
+
         last_text = ""
-        while self.driver.execute_script("return Date.now();") < deadline:
-            pairs = self._find_toast_messages()
-            if pairs:
-                toast_el, text = pairs[-1]
+        while True:
+            # timeout check
+            if deadline is not None:
+                try:
+                    if self.driver.execute_script("return Date.now();") >= deadline:
+                        break
+                except Exception:
+                    # if JS call fails, break and rely on last_text
+                    break
+
+            # scan for toasts (ignore stales during collection)
+            try:
+                pairs = self._find_toast_messages()
+            except StaleElementReferenceException:
+                pairs = []
+            except Exception:
+                pairs = []
+
+            nonempty = [(el, txt) for (el, txt) in pairs if txt]
+            if nonempty:
+                toast_el, text = nonempty[-1]
                 last_text = text
                 if not wanted or any(w.lower() in text.lower() for w in wanted):
                     if dismiss:
                         self._dismiss_toast_element(toast_el)
                     return self
-            self.driver.execute_script("return new Promise(r=>setTimeout(r, 120));")
+
+            # short backoff
+            try:
+                self.driver.execute_script("return new Promise(r=>setTimeout(r, 120));")
+            except Exception:
+                pass
 
         if last_text:
             raise AssertionError(
