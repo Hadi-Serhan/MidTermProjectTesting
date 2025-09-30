@@ -1,15 +1,16 @@
 # tests/ui/pages/dashboard_page.py
 import time
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
+
 from selenium.common.exceptions import (
     ElementClickInterceptedException,
-    TimeoutException,
     StaleElementReferenceException,
+    TimeoutException,
 )
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
 
-from .item_page import ItemPage
 from .base_page import BasePage
+from .item_page import ItemPage
 
 
 class DashboardPage(BasePage):
@@ -27,7 +28,7 @@ class DashboardPage(BasePage):
         while time.time() < end:
             try:
                 return fn()
-            except (StaleElementReferenceException,) as e:
+            except StaleElementReferenceException as e:
                 last_err = e
                 self._tiny_sleep(int(pause * 1000))
             except Exception as e:
@@ -114,11 +115,15 @@ class DashboardPage(BasePage):
 
         def click_options():
             try:
-                btn = row.find_element(By.XPATH, ".//button[@aria-label='Options' or @title='Options']")
+                btn = row.find_element(
+                    By.XPATH, ".//button[@aria-label='Options' or @title='Options']"
+                )
             except Exception:
                 fresh_row = self._row_by_name(item_name)
                 try:
-                    btn = fresh_row.find_element(By.XPATH, ".//button[@aria-label='Options' or @title='Options']")
+                    btn = fresh_row.find_element(
+                        By.XPATH, ".//button[@aria-label='Options' or @title='Options']"
+                    )
                 except Exception:
                     btn = fresh_row.find_element(
                         By.XPATH,
@@ -143,19 +148,25 @@ class DashboardPage(BasePage):
             self.click_element(By.CSS_SELECTOR, "button.filter-button[title='Filter: Trash']")
         except Exception:
             self.click_element(
-                By.XPATH, "//button[contains(@class,'filter-button')][contains(normalize-space(.),'Trash')]"
+                By.XPATH,
+                "//button[contains(@class,'filter-button')][contains(normalize-space(.),'Trash')]",
             )
 
         # wait for trash view & allow a short repaint settle to avoid stale nodes
         try:
             self.wait.until(
                 EC.presence_of_element_located(
-                    (By.XPATH, "//input[@placeholder='Search trash' or contains(@placeholder,'trash')]")
+                    (
+                        By.XPATH,
+                        "//input[@placeholder='Search trash' or contains(@placeholder,'trash')]",
+                    )
                 )
             )
         except TimeoutException:
             self.wait.until(
-                EC.presence_of_element_located((By.XPATH, "//table|//div[contains(.,'There are no items to list.')]"))
+                EC.presence_of_element_located(
+                    (By.XPATH, "//table|//div[contains(.,'There are no items to list.')]")
+                )
             )
 
         self._tiny_sleep(200)

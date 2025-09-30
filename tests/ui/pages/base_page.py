@@ -1,12 +1,13 @@
 # tests/ui/pages/base_page.py
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
 from selenium.common.exceptions import (
-    TimeoutException,
     ElementClickInterceptedException,
     StaleElementReferenceException,
+    TimeoutException,
 )
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+
 
 class BasePage:
     def __init__(self, driver):
@@ -176,9 +177,12 @@ class BasePage:
 
                 if msg_els:
                     try:
-                        msg_text = (self.driver.execute_script(
-                            "return arguments[0].innerText || '';", msg_els[-1]
-                        ) or "").strip()
+                        msg_text = (
+                            self.driver.execute_script(
+                                "return arguments[0].innerText || '';", msg_els[-1]
+                            )
+                            or ""
+                        ).strip()
                     except StaleElementReferenceException:
                         continue
                     except Exception:
@@ -187,9 +191,10 @@ class BasePage:
                 # fallback to node's innerText / text
                 if not msg_text:
                     try:
-                        msg_text = (self.driver.execute_script(
-                            "return arguments[0].innerText || '';", node
-                        ) or "").strip()
+                        msg_text = (
+                            self.driver.execute_script("return arguments[0].innerText || '';", node)
+                            or ""
+                        ).strip()
                     except StaleElementReferenceException:
                         continue
                     except Exception:
@@ -237,8 +242,13 @@ class BasePage:
             except Exception:
                 pass
 
-    def assert_toast_message(self, expected_text: str = None, timeout: int = 10,
-                             any_of: list | None = None, dismiss: bool = True):
+    def assert_toast_message(
+        self,
+        expected_text: str = None,
+        timeout: int = 10,
+        any_of: list | None = None,
+        dismiss: bool = True,
+    ):
         """
         Wait for a toast-ish node to show non-empty text, assert it matches expected_text (or any_of),
         then optionally dismiss it. Robust to stales while the DOM repaints.

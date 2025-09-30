@@ -1,8 +1,10 @@
 # tests/ui/pages/item_page.py
+from selenium.common.exceptions import ElementClickInterceptedException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import ElementClickInterceptedException
+
 from .base_page import BasePage
+
 
 class ItemPage(BasePage):
     def enter_item_name(self, name):
@@ -49,7 +51,6 @@ class ItemPage(BasePage):
         self._dismiss_dialogs(timeout=10)
         return self
 
-
     # ------- NEW: click Edit inside the 'View Login' dialog -------
     def click_edit_in_view(self):
         xpath = "//cdk-dialog-container//footer//button[.//span[normalize-space(text())='Edit'] or normalize-space(text())='Edit']"
@@ -81,8 +82,7 @@ class ItemPage(BasePage):
     # ------- NEW: save changes in edit form (reuse submit button) -------
     def save_changes(self):
         return self.save_item()
-    
-    
+
     def open_item_options_for(self, item_name):
         self._wait_for_no_overlay(10)
         self.wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table tbody")))
@@ -104,7 +104,7 @@ class ItemPage(BasePage):
         except Exception:
             btn = row.find_element(
                 By.XPATH,
-                ".//button[contains(translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'options')]"
+                ".//button[contains(translate(@aria-label,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'options')]",
             )
 
         try:
@@ -179,7 +179,6 @@ class ItemPage(BasePage):
             self._wait_for_no_overlay(2)
             self.driver.execute_script("arguments[0].click();", btn)
         return self
-
 
     def click_restore_in_view(self):
         """When viewing an item (in Trash), click the Restore button in the footer."""

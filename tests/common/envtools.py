@@ -1,10 +1,12 @@
 # tests/common/envtools.py
 import os
+
 import requests
-from dotenv import load_dotenv, find_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 # Load .env once for all tests
 load_dotenv(find_dotenv(), override=False)
+
 
 def pick_url() -> str:
     """Resolve VAULTWARDEN_URL from env/.env, or probe common ports."""

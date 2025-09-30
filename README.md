@@ -1,6 +1,6 @@
 # MidTermProjectTesting — Test Plan & Runbook
 
-> **Vaultwarden (Bitwarden-compatible) UI & API automated tests.**  
+> **Vaultwarden (Bitwarden-compatible) UI & API automated tests.**
 > Goal: verify basic availability, authenticated API behavior, and a stable end‑to‑end UI flow.
 
 ---
@@ -128,7 +128,7 @@ export CLIENT_SECRET="yyyyy"
 # 3) Run API suite
 pytest tests/api -v
 
-# 4) Run UI suite 
+# 4) Run UI suite
 pytest tests/ui -v
 ```
 
@@ -140,4 +140,3 @@ pytest tests/ui -v
 - API keys are **rotatable** and **unique per server** — ensure the correct key for each environment
 
 ---
-

@@ -1,6 +1,7 @@
 # tests/ui/pages/view_item_page.py
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
+
 from .base_page import BasePage
 from .item_page import ItemPage
 
@@ -9,8 +10,14 @@ class ViewItemPage(BasePage):
     def assert_view_open_for(self, item_name: str):
         candidates = [
             (By.CSS_SELECTOR, ".item-header h2, .item-header h3, .item-header .title"),
-            (By.XPATH, "//div[contains(@class,'item-header')]//*[self::h2 or self::h3 or self::strong]"),
-            (By.XPATH, "//div[contains(@class,'item-view') or contains(@class,'dialog')]//*[self::h2 or self::h3 or self::strong]"),
+            (
+                By.XPATH,
+                "//div[contains(@class,'item-header')]//*[self::h2 or self::h3 or self::strong]",
+            ),
+            (
+                By.XPATH,
+                "//div[contains(@class,'item-view') or contains(@class,'dialog')]//*[self::h2 or self::h3 or self::strong]",
+            ),
         ]
         title_text = ""
         for by, sel in candidates:
@@ -33,9 +40,11 @@ class ViewItemPage(BasePage):
         """
         # 1) Save button becomes visible (it exists but starts hidden)
         try:
-            save_btn = self.wait.until(EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "button[form='cipherForm'][type='submit']")
-            ))
+            save_btn = self.wait.until(
+                EC.presence_of_element_located(
+                    (By.CSS_SELECTOR, "button[form='cipherForm'][type='submit']")
+                )
+            )
             self.wait.until(lambda d: save_btn.is_displayed())
             return
         except Exception:
@@ -43,9 +52,9 @@ class ViewItemPage(BasePage):
 
         # 2) Fallback: a known edit input is present and enabled
         try:
-            name_input = self.wait.until(EC.presence_of_element_located(
-                (By.CSS_SELECTOR, "input[formcontrolname='name']")
-            ))
+            name_input = self.wait.until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "input[formcontrolname='name']"))
+            )
             self.wait.until(lambda d: name_input.is_enabled())
             return
         except Exception:
@@ -123,14 +132,19 @@ class ViewItemPage(BasePage):
         self._kill_blockers()
 
         # Ensure dialog is up
-        dialog = self.wait.until(EC.presence_of_element_located(
-            (By.CSS_SELECTOR, "cdk-dialog-container app-vault-item-dialog bit-dialog")
-        ))
+        dialog = self.wait.until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "cdk-dialog-container app-vault-item-dialog bit-dialog")
+            )
+        )
 
         # Strategy 1: strict within-dialog locator
         edit_btn = None
         for loc in [
-            (By.XPATH, ".//section//footer//button[.//span[normalize-space()='Edit'] or normalize-space()='Edit']"),
+            (
+                By.XPATH,
+                ".//section//footer//button[.//span[normalize-space()='Edit'] or normalize-space()='Edit']",
+            ),
             (By.CSS_SELECTOR, "section footer button[buttontype='primary'][type='button']"),
         ]:
             try:
@@ -144,7 +158,9 @@ class ViewItemPage(BasePage):
 
         if edit_btn:
             try:
-                self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", edit_btn)
+                self.driver.execute_script(
+                    "arguments[0].scrollIntoView({block:'center'});", edit_btn
+                )
             except Exception:
                 pass
             self._kill_blockers()
@@ -159,9 +175,14 @@ class ViewItemPage(BasePage):
         else:
             # Strategy 2: your absolute XPath as a fallback
             try:
-                abs_btn = self.driver.find_element(By.XPATH, "/html/body/div[1]/div[2]/div/cdk-dialog-container/app-vault-item-dialog/bit-dialog/section/footer/button[1]")
+                abs_btn = self.driver.find_element(
+                    By.XPATH,
+                    "/html/body/div[1]/div[2]/div/cdk-dialog-container/app-vault-item-dialog/bit-dialog/section/footer/button[1]",
+                )
                 try:
-                    self.driver.execute_script("arguments[0].scrollIntoView({block:'center'});", abs_btn)
+                    self.driver.execute_script(
+                        "arguments[0].scrollIntoView({block:'center'});", abs_btn
+                    )
                 except Exception:
                     pass
                 self._kill_blockers()

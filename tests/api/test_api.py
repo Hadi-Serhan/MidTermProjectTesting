@@ -1,13 +1,16 @@
-#tests/api/test_api.py
+# tests/api/test_api.py
 import os
-import requests
 import uuid
-from dotenv import load_dotenv, find_dotenv
 from urllib.parse import urlparse
 
+import requests
+from dotenv import find_dotenv, load_dotenv
+
 load_dotenv(find_dotenv(), override=False)
+
+
 def resolve_env():
-    # 1) If standard vars are set, use them 
+    # 1) If standard vars are set, use them
     url = os.getenv("VAULTWARDEN_URL")
     cid = os.getenv("CLIENT_ID")
     csec = os.getenv("CLIENT_SECRET")
@@ -17,26 +20,33 @@ def resolve_env():
     # 2) Else branch by profile or by URL
     profile = os.getenv("VW_PROFILE", "").lower()
     if profile == "aws":
-        return (os.getenv("AWS_VAULTWARDEN_URL"),
-                os.getenv("AWS_CLIENT_ID"),
-                os.getenv("AWS_CLIENT_SECRET"))
+        return (
+            os.getenv("AWS_VAULTWARDEN_URL"),
+            os.getenv("AWS_CLIENT_ID"),
+            os.getenv("AWS_CLIENT_SECRET"),
+        )
     if profile == "local":
-        return (os.getenv("LOCAL_VAULTWARDEN_URL"),
-                os.getenv("LOCAL_CLIENT_ID"),
-                os.getenv("LOCAL_CLIENT_SECRET"))
+        return (
+            os.getenv("LOCAL_VAULTWARDEN_URL"),
+            os.getenv("LOCAL_CLIENT_ID"),
+            os.getenv("LOCAL_CLIENT_SECRET"),
+        )
 
     # 3) Fallback: infer from URL host if provided
     if url:
         host = urlparse(url).hostname or ""
         if host in ("localhost", "127.0.0.1"):
             # decide which set based on port if you want
-            port = (urlparse(url).port or 80)
+            port = urlparse(url).port or 80
             if port == 3000:
                 return (url, os.getenv("LOCAL_CLIENT_ID"), os.getenv("LOCAL_CLIENT_SECRET"))
             else:
                 return (url, os.getenv("AWS_CLIENT_ID"), os.getenv("AWS_CLIENT_SECRET"))
 
-    raise RuntimeError("No credentials found. Set CLIENT_ID/CLIENT_SECRET or VW_PROFILE and corresponding vars.")
+    raise RuntimeError(
+        "No credentials found. Set CLIENT_ID/CLIENT_SECRET or VW_PROFILE and corresponding vars."
+    )
+
 
 VAULTWARDEN_URL, CLIENT_ID, CLIENT_SECRET = resolve_env()
 
@@ -64,7 +74,6 @@ def get_access_token():
     return r.json()["access_token"]
 
 
-
 def make_api_request(endpoint):
     token = get_access_token()
     headers = {"Authorization": f"Bearer {token}"}
@@ -75,15 +84,19 @@ def make_api_request(endpoint):
 
 ############ TESTING API ENDPOINTS ############
 
+
 # Health Checks
 def test_health_alive():
     r = requests.get(f"{VAULTWARDEN_URL}/alive", timeout=5)
     assert r.status_code == 200
+
+
 # API Alive Check
 def test_health_api_alive():
     r = requests.get(f"{VAULTWARDEN_URL}/api/alive")
     assert r.status_code == 200
-    
+
+
 # Version Check
 def test_version():
     r = requests.get(f"{VAULTWARDEN_URL}/api/version", timeout=5)
@@ -101,7 +114,8 @@ def test_version():
 
     assert ver, f"Could not parse version from response: {r.text}"
     assert any(ch.isdigit() for ch in ver), f"Version doesn't look right: {ver}"
-    
+
+
 # Account Profile
 def test_account_profile():
     data = make_api_request("/accounts/profile")
@@ -110,11 +124,12 @@ def test_account_profile():
     assert "id" in data, "Profile response missing 'id'"
     assert "name" in data or "userName" in data, "Profile missing a name field"
 
+
 # List Ciphers
 def test_list_ciphers():
-    data = make_api_request("/ciphers") 
+    data = make_api_request("/ciphers")
     assert isinstance(data, dict), "Expected JSON object from /ciphers"
     assert "data" in data, "Missing 'data' key in /ciphers response"
     assert isinstance(data["data"], list), "'data' is not a list"
-    
+
     ##

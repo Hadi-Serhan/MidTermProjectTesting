@@ -1,0 +1,11 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 100  # keep global limit tight
+
+[tool.ruff.lint]
+# Keep linter strict on real errors only
+select = ["E", "F", "W"]
+
+[tool.ruff.lint.extend-per-file-ignores]
+# Allow long lines in tests where XPaths/JS strings are unavoidable
+"tests/**" = ["E501"]
