@@ -40,9 +40,7 @@ class RestoreItemTest(BaseVaultwardenTest):
             dp.open_item_options_for(name)
             .click_delete()
             .confirm_delete()
-            .assert_toast_message(
-                any_of=["Item sent to trash", "Item moved to trash", "Item deleted"], timeout=10
-            )
+            .assert_toast_message(any_of=["Item sent to trash"], timeout=10)
         )
 
         # Go to Trash and verify it is there
@@ -51,7 +49,7 @@ class RestoreItemTest(BaseVaultwardenTest):
         # Restore -> assert toast
         (
             dp.restore_item_from_trash(name).assert_toast_message(
-                any_of=["Item restored", "Item moved", "Item updated"], timeout=10
+                any_of=["Item restored"], timeout=10
             )
         )
 
@@ -63,7 +61,5 @@ class RestoreItemTest(BaseVaultwardenTest):
             dp.open_item_options_for(name)
             .click_delete()
             .confirm_delete()
-            .assert_toast_message(
-                any_of=["Item sent to trash", "Item moved to trash", "Item deleted"], timeout=10
-            )
+            .assert_toast_message(any_of=["Item sent to trash"], timeout=10)
         )

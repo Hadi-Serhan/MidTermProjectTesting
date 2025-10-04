@@ -4,8 +4,8 @@ import os
 from tests.ui.base_ui import BaseVaultwardenTest
 from tests.ui.pages.login_page import LoginPage
 
-EMAIL = os.getenv("VW_EMAIL", "hadixserhan@gmail.com")
-PASSWORD = os.getenv("VW_PASSWORD", "Hadi123456789123")
+EMAIL = os.getenv("VW_EMAIL")
+PASSWORD = os.getenv("VW_PASSWORD")
 
 
 class CreatingItemsTest(BaseVaultwardenTest):
